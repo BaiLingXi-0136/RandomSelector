@@ -1,118 +1,17 @@
+"""随机选择人员系统 — UI 层"""
 import flet as ft
 import pandas as pd
 import time
-import json
 from datetime import datetime
 from pathlib import Path
 
-# 设置配置目录
-CONFIG_DIR = Path("config")
-DATA_DIR = CONFIG_DIR / "data"
-DEFAULT_EXCEL_FILE = DATA_DIR / "PersonnelList.xlsx"
-SETTINGS_FILE = CONFIG_DIR / "settings.json"
-
-
-def _load_settings() -> dict:
-    """从设置文件读取所有配置"""
-    try:
-        if SETTINGS_FILE.exists():
-            return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
-    except (Exception,):
-        pass
-    return {}
-
-
-def _save_settings(settings: dict):
-    """保存配置到设置文件"""
-    try:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        # 合并现有设置，避免覆盖其他字段
-        current = _load_settings()
-        current.update(settings)
-        SETTINGS_FILE.write_text(
-            json.dumps(current, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-    except (Exception,):
-        pass
-
-
-def _get_data_file_path() -> Path:
-    """从设置获取数据文件路径，无效则返回默认"""
-    settings = _load_settings()
-    path = Path(settings.get("data_file", str(DEFAULT_EXCEL_FILE)))
-    return path if path.exists() else DEFAULT_EXCEL_FILE
-
-
-class PersonnelManager:
-    def __init__(self, file_path=None):
-        self.df = None
-        self.file_path = Path(file_path) if file_path else _get_data_file_path()
-
-    def set_file_path(self, path):
-        """更换数据文件路径"""
-        self.file_path = Path(path)
-        self.df = None
-        _save_settings({"data_file": str(self.file_path.resolve())})
-
-    @property
-    def file_name(self) -> str:
-        """返回当前数据文件的简短名称"""
-        return self.file_path.name
-
-    def load_data(self) -> bool:
-        """加载人员数据"""
-        try:
-            if not self.file_path.exists():
-                return False
-            self.df = pd.read_excel(self.file_path)
-            if self.df.empty:
-                return False
-            # 确保选择标记列存在
-            if '是否已选' not in self.df.columns:
-                self.df['是否已选'] = '否'
-            # 确保'选择时间'列存在且为字符串类型
-            if '选择时间' not in self.df.columns:
-                self.df['选择时间'] = ''
-            else:
-                # 转换现有数据为字符串类型
-                self.df['选择时间'] = self.df['选择时间'].astype(str)
-            return True
-        except (Exception, FileNotFoundError):
-            return False
-
-    def get_unselected_personnel(self) -> pd.DataFrame:
-        """获取未选择的人员"""
-        if self.df is None:
-            return pd.DataFrame()
-        return self.df[self.df['是否已选'] == '否']
-
-    def get_all_personnel(self) -> pd.DataFrame:
-        """获取所有人员"""
-        if self.df is None:
-            return pd.DataFrame()
-        return self.df.copy()
-
-    def update_selection_status(self, indices, selected: bool = True):
-        """更新选择状态"""
-        if self.df is not None:
-            for idx in indices:
-                self.df.at[idx, '是否已选'] = '是' if selected else '否'
-                if selected:
-                    self.df.at[idx, '选择时间'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    # 确保选择时间列保持字符串类型
-                    self.df['选择时间'] = self.df['选择时间'].astype(str)
-
-    def save_data(self):
-        """保存数据到文件"""
-        if self.df is not None:
-            self.df.to_excel(self.file_path, index=False)
-
-    def clear_selection_records(self):
-        """清空选择记录"""
-        if self.df is not None:
-            self.df['是否已选'] = '否'
-            self.df['选择时间'] = ''
+from config import DATA_DIR, load_settings, save_settings
+from personnel_manager import PersonnelManager
+from ui_helpers import (
+    safe_val, make_selection_table, make_row_cells,
+    build_split_personnel_tables,
+    menu_item, not_implemented, show_about_dialog, show_help_dialog,
+)
 
 
 class RandomSelectorUI:
@@ -145,7 +44,7 @@ class RandomSelectorUI:
         self.file_picker = None
 
         # 种子设置（从配置文件加载）
-        settings = _load_settings()
+        settings = load_settings()
         self._seed_enabled = settings.get("seed_enabled", False)
         self._seed_value = settings.get("seed_value", 42)
 
@@ -174,26 +73,6 @@ class RandomSelectorUI:
 
     # ==================== 菜单栏与文件选择 ====================
 
-    @staticmethod
-    def _menu_item(label, shortcut="", icon=None, on_click=None, disabled=False):
-        """构建标准菜单项，含标签、快捷键提示和图标"""
-        row_children = [ft.Text(label)]
-        if shortcut:
-            row_children.append(
-                ft.Text(shortcut, style=ft.TextStyle(color="#999999", size=12))
-            )
-        return ft.MenuItemButton(
-            content=ft.Row(row_children, expand=True),
-            leading=icon,
-            on_click=on_click,
-            disabled=disabled,
-        )
-
-    @staticmethod
-    def _not_implemented(message):
-        """终端提示未完成的功能"""
-        print(f"[未完成] {message}")
-
     def _build_menu_bar(self):
         """构建菜单栏"""
         self.menu_bar = ft.MenuBar(
@@ -203,68 +82,64 @@ class RandomSelectorUI:
                 ft.SubmenuButton(
                     content=ft.Text("文件"),
                     controls=[
-                        self._menu_item("打开数据文件...", "",
-                                        icon=ft.Icon(ft.Icons.FOLDER_OPEN),
-                                        on_click=self._on_open_file_click),
+                        menu_item("打开数据文件...", "",
+                                  icon=ft.Icon(ft.Icons.FOLDER_OPEN),
+                                  on_click=self._on_open_file_click),
                         ft.MenuItemButton(),
-                        self._menu_item("退出", "",
-                                        icon=ft.Icon(ft.Icons.EXIT_TO_APP),
-                                        on_click=lambda e: e.page.window.close()),
+                        menu_item("退出", "",
+                                  icon=ft.Icon(ft.Icons.EXIT_TO_APP),
+                                  on_click=lambda e: e.page.window.close()),
                     ],
                 ),
                 # ========== 编辑 ==========
                 ft.SubmenuButton(
                     content=ft.Text("编辑"),
                     controls=[
-                        self._menu_item("清空选择记录...", "",
-                                        icon=ft.Icon(ft.Icons.CLEAR_ALL),
-                                        on_click=self._on_clear_records_menu),
-                        ft.MenuItemButton(),
-                        self._menu_item("重置所有数据...", "",
-                                        icon=ft.Icon(ft.Icons.RESTORE),
-                                        on_click=lambda _: self._not_implemented("重置所有数据：清空所有选择记录并还原初始状态")),
+                        menu_item("清空选择记录...", "",
+                                  icon=ft.Icon(ft.Icons.CLEAR_ALL),
+                                  on_click=self._on_clear_records_menu),
                     ],
                 ),
                 # ========== 视图 ==========
                 ft.SubmenuButton(
                     content=ft.Text("视图"),
                     controls=[
-                        self._menu_item("查看所有人员", "",
-                                        icon=ft.Icon(ft.Icons.PEOPLE),
-                                        on_click=self._on_show_all_menu),
-                        self._menu_item("查看未选择人员", "",
-                                        icon=ft.Icon(ft.Icons.PERSON_OUTLINE),
-                                        on_click=self._on_show_unselected_menu),
+                        menu_item("查看所有人员", "",
+                                  icon=ft.Icon(ft.Icons.PEOPLE),
+                                  on_click=self._on_show_all_menu),
+                        menu_item("查看未选择人员", "",
+                                  icon=ft.Icon(ft.Icons.PERSON_OUTLINE),
+                                  on_click=self._on_show_unselected_menu),
                         ft.MenuItemButton(),
-                        self._menu_item("刷新", "",
-                                        icon=ft.Icon(ft.Icons.REFRESH),
-                                        on_click=lambda _: self._refresh_status()),
+                        menu_item("刷新", "",
+                                  icon=ft.Icon(ft.Icons.REFRESH),
+                                  on_click=lambda _: self._refresh_status()),
                     ],
                 ),
                 # ========== 工具 ==========
                 ft.SubmenuButton(
                     content=ft.Text("工具"),
                     controls=[
-                        self._menu_item("导出结果...", "",
-                                        icon=ft.Icon(ft.Icons.SAVE_ALT),
-                                        on_click=self._on_export_results),
+                        menu_item("导出结果...", "",
+                                  icon=ft.Icon(ft.Icons.SAVE_ALT),
+                                  on_click=self._on_export_results),
                         ft.MenuItemButton(),
-                        self._menu_item("选项...", "",
-                                        icon=ft.Icon(ft.Icons.SETTINGS),
-                                        on_click=self._on_options_click),
+                        menu_item("选项...", "",
+                                  icon=ft.Icon(ft.Icons.SETTINGS),
+                                  on_click=self._on_options_click),
                     ],
                 ),
                 # ========== 帮助 ==========
                 ft.SubmenuButton(
                     content=ft.Text("帮助"),
                     controls=[
-                        self._menu_item("使用说明", "",
-                                        icon=ft.Icon(ft.Icons.HELP_OUTLINE),
-                                        on_click=self._on_help_click),
+                        menu_item("使用说明", "",
+                                  icon=ft.Icon(ft.Icons.HELP_OUTLINE),
+                                  on_click=show_help_dialog),
                         ft.MenuItemButton(),
-                        self._menu_item("关于...", "",
-                                        icon=ft.Icon(ft.Icons.INFO_OUTLINE),
-                                        on_click=self._on_about_click),
+                        menu_item("关于...", "",
+                                  icon=ft.Icon(ft.Icons.INFO_OUTLINE),
+                                  on_click=show_about_dialog),
                     ],
                 ),
             ],
@@ -280,10 +155,9 @@ class RandomSelectorUI:
                 file_type=ft.FilePickerFileType.CUSTOM,
             )
 
-    def _on_clear_records_menu(self, _e):
+    def _on_clear_records_menu(self, e):
         """菜单栏触发的清空记录"""
-        if self.btn_clear is not None:
-            self.clear_records(_e)
+        self._confirm_clear_records(e)
 
     def _on_show_all_menu(self, _e):
         """菜单栏触发的查看所有人员"""
@@ -294,64 +168,6 @@ class RandomSelectorUI:
         """菜单栏触发的查看未选择人员"""
         if self.btn_show_unselected is not None:
             self.show_unselected_personnel(_e)
-
-    # ==================== 关于对话框 ====================
-
-    @staticmethod
-    def _on_about_click(e):
-        """打开关于对话框，内容从 ABOUT.md 读取"""
-        page = e.page
-        about_path = CONFIG_DIR / "ABOUT.md"
-        try:
-            about_text = about_path.read_text(encoding="utf-8")
-        except (OSError,):
-            about_text = "无法加载关于信息"
-
-        dialog = ft.AlertDialog(
-            title=ft.Text("关于"),
-            content=ft.Container(
-                ft.Markdown(
-                    about_text,
-                    selectable=True,
-                    extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
-                ),
-                width=500,
-            ),
-            actions=[
-                ft.TextButton("确定", on_click=lambda _: page.close(dialog)),
-            ],
-        )
-        page.open(dialog)
-
-    @staticmethod
-    def _on_help_click(e):
-        """打开使用说明对话框，内容从 README.md 读取"""
-        page = e.page
-        readme_path = Path("README.md")
-        try:
-            help_text = readme_path.read_text(encoding="utf-8")
-        except (OSError,):
-            help_text = "无法加载使用说明"
-
-        dialog = ft.AlertDialog(
-            title=ft.Text("使用说明"),
-            content=ft.Column(
-                [
-                    ft.Markdown(
-                        help_text,
-                        selectable=True,
-                        extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
-                    ),
-                ],
-                scroll=ft.ScrollMode.AUTO,
-                width=700,
-                height=450,
-            ),
-            actions=[
-                ft.TextButton("确定", on_click=lambda _: page.close(dialog)),
-            ],
-        )
-        page.open(dialog)
 
     # ==================== 选项对话框 ====================
 
@@ -392,7 +208,7 @@ class RandomSelectorUI:
             # 保存设置
             self._seed_enabled = seed_checkbox.value
             self._seed_value = val
-            _save_settings({
+            save_settings({
                 "seed_enabled": self._seed_enabled,
                 "seed_value": self._seed_value,
             })
@@ -461,10 +277,10 @@ class RandomSelectorUI:
         ]
         for i, (_, row) in enumerate(self._last_selected_rows.iterrows(), 1):
             lines.append(
-                f"{i:>3}. {self._safe_val(row['姓名'])}  "
-                f"学号：{self._safe_val(row['学号'])}  "
-                f"班级：{self._safe_val(row['班级'])}  "
-                f"性别：{self._safe_val(row['性别'])}"
+                f"{i:>3}. {safe_val(row['姓名'])}  "
+                f"学号：{safe_val(row['学号'])}  "
+                f"班级：{safe_val(row['班级'])}  "
+                f"性别：{safe_val(row['性别'])}"
             )
         lines.extend([
             "",
@@ -566,7 +382,7 @@ class RandomSelectorUI:
 
         self.btn_clear = ft.ElevatedButton(
             "清空记录",
-            on_click=self.clear_records,
+            on_click=self._confirm_clear_records,
             style=ft.ButtonStyle(bgcolor="#f44336", color="white"),
             width=150
         )
@@ -891,7 +707,7 @@ class RandomSelectorUI:
         # 3. 记录被排除者在原表格中的位置，构建剩余列表
         pos = list(self._last_selected_rows.index).index(idx)  # 整数位置
         remaining = self._last_selected_rows.drop(idx)
-        person_name = self._safe_val(person_row['姓名'])
+        person_name = safe_val(person_row['姓名'])
 
         # 4. 确定替换人员池（模式相关）
         if self._last_mode == "temporary":
@@ -919,7 +735,7 @@ class RandomSelectorUI:
         # 6. 随机选择替换人员
         replacement = pool.sample(n=1, random_state=self._random_state)
         replacement_idx = replacement.index[0]
-        replacement_name = self._safe_val(replacement.iloc[0]['姓名'])
+        replacement_name = safe_val(replacement.iloc[0]['姓名'])
 
         # 7. 拖地模式：标记替换者为已选并保存
         if self._last_mode == "mopping":
@@ -950,52 +766,21 @@ class RandomSelectorUI:
         if self.main_column is not None:
             self.main_column.scroll_to(key="backtrack_panel", duration=300)
 
-    @staticmethod
-    def _make_selection_table():
-        """创建抽选结果用的空DataTable（不含是否已选列）"""
-        return ft.DataTable(
-            columns=[
-                ft.DataColumn(ft.Text("序号", weight=ft.FontWeight.BOLD, size=13)),
-                ft.DataColumn(ft.Text("姓名", weight=ft.FontWeight.BOLD, size=13)),
-                ft.DataColumn(ft.Text("学号", weight=ft.FontWeight.BOLD, size=13)),
-                ft.DataColumn(ft.Text("班级", weight=ft.FontWeight.BOLD, size=13)),
-                ft.DataColumn(ft.Text("性别", weight=ft.FontWeight.BOLD, size=13)),
-            ],
-            rows=[],
-            column_spacing=12,
-            heading_row_height=38,
-            data_row_min_height=32,
-            data_row_max_height=40,
-            border=ft.border.all(color="#e0e0e0", width=1),
-            border_radius=8,
-            show_bottom_border=True,
-            heading_row_color="#E3F2FD",
-        )
-
-    @staticmethod
-    def _make_row_cells(i, row, safe_val):
-        """构建一行的DataCell列表"""
-        return [
-            ft.DataCell(ft.Text(str(i), size=13, text_align=ft.TextAlign.CENTER)),
-            ft.DataCell(ft.Text(safe_val(row['姓名']), size=13)),
-            ft.DataCell(ft.Text(safe_val(row['学号']), size=13, text_align=ft.TextAlign.CENTER)),
-            ft.DataCell(ft.Text(safe_val(row['班级']), size=13, text_align=ft.TextAlign.CENTER)),
-            ft.DataCell(ft.Text(safe_val(row['性别']), size=13, text_align=ft.TextAlign.CENTER)),
-        ]
+    # ==================== 结果显示 ====================
 
     def _animate_table_fill(self, table, rows_data, start_index, scroll_target, animate=True):
         """逐行动画填充一个表格。animate=False 时直接全部填充，无延迟。"""
         if not animate:
             # 直接填充所有行，无动画
             for i, (_, row) in enumerate(rows_data, start_index):
-                cells = self._make_row_cells(i, row, self._safe_val)
+                cells = make_row_cells(i, row)
                 color = "#fff8e1" if i % 2 == 0 else None
                 table.rows.append(ft.DataRow(cells=cells, color=color))
             table.update()
             return
 
         for i, (_, row) in enumerate(rows_data, start_index):
-            cells = self._make_row_cells(i, row, self._safe_val)
+            cells = make_row_cells(i, row)
 
             # 新行亮黄高亮
             table.rows.append(ft.DataRow(cells=cells, color="#FFF9C4"))
@@ -1043,7 +828,7 @@ class RandomSelectorUI:
         try:
             # ≤2人：单表
             if count <= 2:
-                table = self._make_selection_table()
+                table = make_selection_table()
                 table_row = ft.Row([table], scroll=ft.ScrollMode.AUTO, key="sel_table")
                 result_cards.append(table_row)
                 self.result_area.controls.extend(result_cards)
@@ -1057,8 +842,8 @@ class RandomSelectorUI:
                 left_rows = list(selected_rows.iloc[:mid].iterrows())
                 right_rows = list(selected_rows.iloc[mid:].iterrows())
 
-                left_table = self._make_selection_table()
-                right_table = self._make_selection_table()
+                left_table = make_selection_table()
+                right_table = make_selection_table()
 
                 left_col = ft.Column([left_table], expand=True, scroll=ft.ScrollMode.AUTO, key="left_table")
                 right_col = ft.Column([right_table], expand=True, scroll=ft.ScrollMode.AUTO, key="right_table")
@@ -1080,6 +865,24 @@ class RandomSelectorUI:
         finally:
             if animate:
                 self._set_buttons_disabled(False)
+
+    def _confirm_clear_records(self, e):
+        """弹出二次确认窗口，确认后执行清空记录"""
+        page = e.page
+
+        def on_confirm(_e):
+            page.close(dialog)
+            self.clear_records(e)
+
+        dialog = ft.AlertDialog(
+            title=ft.Text("确认清空"),
+            content=ft.Text("确定要清空所有选择记录吗？\n此操作不可撤销，所有人员的选中状态将被重置。"),
+            actions=[
+                ft.TextButton("取消", on_click=lambda _: page.close(dialog)),
+                ft.TextButton("确定清空", on_click=on_confirm),
+            ],
+        )
+        page.open(dialog)
 
     def clear_records(self, _e):
         """清空记录"""
@@ -1141,84 +944,6 @@ class RandomSelectorUI:
         self.result_area.update()
         self._refresh_status()
 
-    @staticmethod
-    def _safe_val(val):
-        """安全获取单元格值，NaN转为空字符串"""
-        return str(val) if pd.notna(val) else ""
-
-    def _build_personnel_table(self, df, include_status=True, start_index=1):
-        """构建人员信息DataTable"""
-        columns = [
-            ft.DataColumn(ft.Text("序号", weight=ft.FontWeight.BOLD, size=13)),
-            ft.DataColumn(ft.Text("姓名", weight=ft.FontWeight.BOLD, size=13)),
-            ft.DataColumn(ft.Text("学号", weight=ft.FontWeight.BOLD, size=13)),
-            ft.DataColumn(ft.Text("班级", weight=ft.FontWeight.BOLD, size=13)),
-            ft.DataColumn(ft.Text("性别", weight=ft.FontWeight.BOLD, size=13)),
-        ]
-        if include_status:
-            columns.append(ft.DataColumn(ft.Text("是否已选", weight=ft.FontWeight.BOLD, size=13)))
-
-        table = ft.DataTable(
-            columns=columns,
-            rows=[],
-            column_spacing=12,
-            heading_row_height=38,
-            data_row_min_height=32,
-            data_row_max_height=40,
-            border=ft.border.all(color="#e0e0e0", width=1),
-            border_radius=8,
-            show_bottom_border=True,
-            heading_row_color="#E3F2FD",
-        )
-
-        for i, (_, row) in enumerate(df.iterrows(), start_index):
-            selected = (include_status and row['是否已选'] == '是')
-
-            cells = [
-                ft.DataCell(ft.Text(str(i), size=13, text_align=ft.TextAlign.CENTER)),
-                ft.DataCell(ft.Text(self._safe_val(row['姓名']), size=13)),
-                ft.DataCell(ft.Text(self._safe_val(row['学号']), size=13, text_align=ft.TextAlign.CENTER)),
-                ft.DataCell(ft.Text(self._safe_val(row['班级']), size=13, text_align=ft.TextAlign.CENTER)),
-                ft.DataCell(ft.Text(self._safe_val(row['性别']), size=13, text_align=ft.TextAlign.CENTER)),
-            ]
-
-            if include_status:
-                status_text = "是" if selected else "否"
-                status_color = "#4CAF50" if selected else "#F44336"
-                cells.append(
-                    ft.DataCell(ft.Text(
-                        status_text, size=13, color=status_color,
-                        weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER
-                    ))
-                )
-
-            # 已选行浅绿背景，未选行交替色便于阅读
-            row_color = "#f1f8e9" if selected else ("#fff8e1" if i % 2 == 0 else None)
-            table.rows.append(ft.DataRow(cells=cells, color=row_color))
-
-        return table
-
-    def _build_split_personnel_tables(self, df, include_status=True):
-        """将数据对半拆分，返回左右两个表格平铺的Row"""
-        mid = (len(df) + 1) // 2  # 向上取整，左表多一个
-
-        left_df = df.iloc[:mid]
-        right_df = df.iloc[mid:]
-
-        left_table = self._build_personnel_table(left_df, include_status, start_index=1)
-        right_table = self._build_personnel_table(
-            right_df, include_status, start_index=mid + 1
-        ) if len(right_df) > 0 else None
-
-        tables = [
-            ft.Column([left_table], expand=True, scroll=ft.ScrollMode.AUTO),
-        ]
-        if right_table is not None:
-            tables.append(ft.VerticalDivider(width=1, color="#e0e0e0"))
-            tables.append(ft.Column([right_table], expand=True, scroll=ft.ScrollMode.AUTO))
-
-        return ft.Row(tables, expand=True, vertical_alignment=ft.CrossAxisAlignment.START)
-
     def show_all_personnel(self, e):
         """显示所有人员"""
         self._clear_selection_context()
@@ -1237,7 +962,7 @@ class RandomSelectorUI:
             return
 
         all_personnel = self.personnel_manager.get_all_personnel()
-        split_tables = self._build_split_personnel_tables(all_personnel, include_status=True)
+        split_tables = build_split_personnel_tables(all_personnel, include_status=True)
 
         # 统计信息
         selected_count = (all_personnel['是否已选'] == '是').sum()
@@ -1289,7 +1014,7 @@ class RandomSelectorUI:
             self.result_area.update()
             return
 
-        split_tables = self._build_split_personnel_tables(unselected_df, include_status=False)
+        split_tables = build_split_personnel_tables(unselected_df, include_status=False)
 
         self.result_area.controls.extend([
             ft.Text(f"未选择的人员（共{len(unselected_df)}名）", size=18, weight=ft.FontWeight.BOLD),
@@ -1297,32 +1022,3 @@ class RandomSelectorUI:
             split_tables,
         ])
         e.page.update()
-
-
-def main(page: ft.Page):
-    """主函数"""
-    page.title = "随机选择人员系统"
-    page.theme_mode = ft.ThemeMode.LIGHT
-    page.window.icon = str(Path(__file__).parent / "config/icon.ico")
-
-    # 设置页面布局
-    page.window_width = 800
-    page.window_height = 600
-    page.window_resizable = True
-    page.window.center()
-
-    # 创建应用实例
-    app_ui = RandomSelectorUI()
-
-    # 构建主视图（内部创建 file_picker）
-    main_view = app_ui.build_main_view()
-
-    # 将文件选择器挂载到 overlay（必须在 page.add 之前，否则 pick_files 报错）
-    page.overlay.append(app_ui.file_picker)
-
-    # 将主视图添加到页面
-    page.add(main_view)
-
-
-if __name__ == "__main__":
-    ft.app(target=main)

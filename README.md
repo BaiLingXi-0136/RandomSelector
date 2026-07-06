@@ -4,20 +4,9 @@
 
 ## 快速开始
 
-### 环境要求
+### 直接运行exe文件即可
 
-- Python 3.10+
-- 依赖库：`flet`、`pandas`、`openpyxl`
-
-```bash
-pip install flet pandas openpyxl
-```
-
-### 启动
-
-```bash
-python random_selector_ui.py
-```
+首次运行程序时，程序会自动在同级目录创建 `config/` 文件夹并复制默认数据文件。用户可自行替换 `config/data/PersonnelList.xlsx` 或通过菜单切换数据文件。
 
 ### 数据文件
 
