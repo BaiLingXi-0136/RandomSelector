@@ -82,6 +82,14 @@ class RandomSelectorUI:
         self.btn_clear = None
         self.main_column = None
 
+        # 回溯功能状态
+        self._last_selected_rows = None   # 当前抽选结果 DataFrame
+        self._last_mode = None            # 当前抽选模式
+
+        # 回溯功能 UI 控件引用（每次 _build_backtrack_panel 时重建）
+        self._backtrack_input = None
+        self._btn_backtrack = None
+
     def build_main_view(self):
         """构建主界面"""
         self.result_area = ft.Column([])
@@ -175,6 +183,7 @@ class RandomSelectorUI:
     def on_mode_change(self, e):
         """模式改变时的处理"""
         self.current_mode = e.control.value
+        self._clear_selection_context()
         # 根据模式显示/隐藏人数输入框
         if self.current_mode == "temporary":
             self.temp_input_container.visible = True
@@ -187,6 +196,7 @@ class RandomSelectorUI:
 
     def start_selection(self, _e):
         """开始选择"""
+        self._clear_selection_context()
         self.result_area.controls.clear()
 
         if not self.personnel_manager.load_data():
@@ -239,6 +249,13 @@ class RandomSelectorUI:
         # 显示结果
         self.display_selection_result(selected_rows, f"临时模式 - 已选择{actual_count}名人员", False)
 
+        # 保存回溯上下文并追加回溯面板
+        self._save_selection_context(selected_rows, "temporary")
+        self.result_area.controls.extend(self._build_backtrack_panel())
+        self.result_area.update()
+        if self.main_column is not None:
+            self.main_column.scroll_to(key="backtrack_panel", duration=300)
+
     def mopping_mode_selection(self):
         """拖地模式选择"""
         unselected_count = len(self.personnel_manager.get_unselected_personnel())
@@ -266,6 +283,10 @@ class RandomSelectorUI:
                     margin=ft.Margin(top=10, bottom=0, left=0, right=0)
                 )
             )
+
+            # 保存回溯上下文并追加回溯面板
+            self._save_selection_context(selected_rows, "mopping")
+            self.result_area.controls.extend(self._build_backtrack_panel())
         elif unselected_count > 0:
             # 不足3人，选择剩余人员
             unselected_df = self.personnel_manager.get_unselected_personnel()
@@ -289,6 +310,10 @@ class RandomSelectorUI:
                     margin=ft.Margin(top=10, bottom=0, left=0, right=0)
                 )
             )
+
+            # 保存回溯上下文并追加回溯面板
+            self._save_selection_context(selected_rows, "mopping")
+            self.result_area.controls.extend(self._build_backtrack_panel())
         else:
             # 所有人都已选择
             self.result_area.controls.append(
@@ -301,16 +326,182 @@ class RandomSelectorUI:
             )
 
         self.result_area.update()
+        if self.main_column is not None:
+            self.main_column.scroll_to(key="backtrack_panel", duration=300)
 
     def _set_buttons_disabled(self, disabled: bool):
         """动画期间禁用/启用所有操作控件"""
         for ctrl in [
             self.btn_start, self.btn_show_all, self.btn_show_unselected,
-            self.btn_clear, self.mode_group, self.temp_count_input
+            self.btn_clear, self.mode_group, self.temp_count_input,
+            self._backtrack_input, self._btn_backtrack,
         ]:
-            if ctrl is not None:
+            if ctrl is not None and ctrl.page is not None:
                 ctrl.disabled = disabled
                 ctrl.update()
+
+    # ==================== 回溯功能 ====================
+
+    def _save_selection_context(self, selected_rows, mode):
+        """保存当前抽选上下文，供回溯使用"""
+        self._last_selected_rows = selected_rows.copy()
+        self._last_mode = mode
+
+    def _clear_selection_context(self):
+        """清除回溯上下文"""
+        self._last_selected_rows = None
+        self._last_mode = None
+
+    def _find_person_in_selection(self, student_id):
+        """在 _last_selected_rows 中按学号查找人员。
+        返回 (index, row_series) 或 (None, None)
+        """
+        if self._last_selected_rows is None or self._last_selected_rows.empty:
+            return None, None
+        match = self._last_selected_rows[
+            self._last_selected_rows['学号'].astype(str).str.strip() == str(student_id).strip()
+        ]
+        if match.empty:
+            return None, None
+        return match.index[0], match.iloc[0]
+
+    def _show_backtrack_error(self, message):
+        """在结果区域顶部显示回溯错误信息（仅保留最新一条）"""
+        # 移除已有的错误提示
+        to_remove = [
+            c for c in self.result_area.controls
+            if isinstance(c, ft.Container) and getattr(c, 'bgcolor', None) == "#ffebee"
+        ]
+        for c in to_remove:
+            self.result_area.controls.remove(c)
+
+        # 插入到结果区域最前面，确保可见
+        self.result_area.controls.insert(
+            0,
+            ft.Container(
+                ft.Text(message, color="#B71C1C", weight=ft.FontWeight.BOLD),
+                bgcolor="#ffebee",
+                padding=10,
+                border_radius=5,
+                margin=ft.Margin(top=0, bottom=10, left=0, right=0),
+            )
+        )
+        self.result_area.update()
+
+    def _build_backtrack_panel(self):
+        """构建回溯 UI 面板，无上下文时返回空列表"""
+        if self._last_selected_rows is None or self._last_selected_rows.empty:
+            return []
+
+        # 每次创建新的控件实例，避免 Flet 控件重新挂载导致事件丢失
+        self._backtrack_input = ft.TextField(
+            label="输入要替换的学生学号",
+            width=200,
+            keyboard_type=ft.KeyboardType.TEXT,
+            text_align=ft.TextAlign.CENTER,
+        )
+        self._btn_backtrack = ft.ElevatedButton(
+            "回溯替换",
+            on_click=self._do_backtrack,
+            style=ft.ButtonStyle(bgcolor="#FF9800", color="white"),
+            width=120,
+        )
+
+        return [
+            ft.Container(key="backtrack_panel"),
+            ft.Divider(),
+            ft.Text("回溯替换：", weight=ft.FontWeight.BOLD, size=14),
+            ft.Text(
+                "如选中人员请假或有特殊情况，可输入其学号进行回溯替换",
+                color="#666666", size=12, italic=True,
+            ),
+            ft.Row(
+                [self._backtrack_input, self._btn_backtrack],
+                alignment=ft.MainAxisAlignment.CENTER,
+            ),
+        ]
+
+    def _do_backtrack(self, _e):
+        """执行回溯替换操作"""
+        student_id = (self._backtrack_input.value or "").strip()
+
+        # 1. 校验输入
+        if not student_id:
+            self._show_backtrack_error("请输入学生学号")
+            return
+
+        if self._last_selected_rows is None or self._last_selected_rows.empty:
+            self._show_backtrack_error("没有可回溯的选中结果，请先进行一次选择")
+            return
+
+        # 2. 在当前抽选结果中查找
+        idx, person_row = self._find_person_in_selection(student_id)
+        if idx is None:
+            self._show_backtrack_error(
+                f"学号为 {student_id} 的人员不在当前选中列表中，请检查输入"
+            )
+            return
+
+        # 3. 记录被排除者在原表格中的位置，构建剩余列表
+        pos = list(self._last_selected_rows.index).index(idx)  # 整数位置
+        remaining = self._last_selected_rows.drop(idx)
+        person_name = self._safe_val(person_row['姓名'])
+
+        # 4. 确定替换人员池（模式相关）
+        if self._last_mode == "temporary":
+            # 临时模式：池 = 全部人员 - 剩余选中人员
+            all_personnel = self.personnel_manager.get_all_personnel()
+            pool = all_personnel[~all_personnel.index.isin(remaining.index)]
+        else:
+            # 拖地模式：先还原被排除者的状态
+            self.personnel_manager.update_selection_status([idx], selected=False)
+            self.personnel_manager.save_data()
+
+            # 池 = 未选人员 - 剩余选中人员
+            unselected = self.personnel_manager.get_unselected_personnel()
+            pool = unselected[~unselected.index.isin(remaining.index)]
+
+        # 5. 检查是否有可用的替换人员
+        if pool.empty:
+            if self._last_mode == "mopping":
+                # 回滚：恢复被排除者的选中状态
+                self.personnel_manager.update_selection_status([idx], selected=True)
+                self.personnel_manager.save_data()
+            self._show_backtrack_error("没有可用的替换人员，无法进行回溯")
+            return
+
+        # 6. 随机选择替换人员
+        replacement = pool.sample(n=1)
+        replacement_idx = replacement.index[0]
+        replacement_name = self._safe_val(replacement.iloc[0]['姓名'])
+
+        # 7. 拖地模式：标记替换者为已选并保存
+        if self._last_mode == "mopping":
+            self.personnel_manager.update_selection_status([replacement_idx], selected=True)
+            self.personnel_manager.save_data()
+
+        # 8. 构建新的选中列表（替换人员插入到被排除者的原位置）
+        parts_before = remaining.iloc[:pos]
+        parts_after = remaining.iloc[pos:]
+        new_selection = pd.concat([parts_before, replacement, parts_after], ignore_index=False)
+        self._last_selected_rows = new_selection
+
+        # 9. 显示更新结果
+        title = (
+            f"回溯替换 - 已将 {person_name}({student_id}) 替换为 {replacement_name}"
+        )
+        self.display_selection_result(
+            new_selection,
+            title,
+            saved_to_file=(self._last_mode == "mopping"),
+            animate=False,
+        )
+
+        # 10. 重新追加回溯面板并滚动到可见位置
+        self.result_area.controls.extend(self._build_backtrack_panel())
+        self.result_area.update()
+        if self.main_column is not None:
+            self.main_column.scroll_to(key="backtrack_panel", duration=300)
 
     @staticmethod
     def _make_selection_table():
@@ -345,8 +536,17 @@ class RandomSelectorUI:
             ft.DataCell(ft.Text(safe_val(row['性别']), size=13, text_align=ft.TextAlign.CENTER)),
         ]
 
-    def _animate_table_fill(self, table, rows_data, start_index, scroll_target):
-        """逐行动画填充一个表格，每行间隔0.35s，自动滚动跟随"""
+    def _animate_table_fill(self, table, rows_data, start_index, scroll_target, animate=True):
+        """逐行动画填充一个表格。animate=False 时直接全部填充，无延迟。"""
+        if not animate:
+            # 直接填充所有行，无动画
+            for i, (_, row) in enumerate(rows_data, start_index):
+                cells = self._make_row_cells(i, row, self._safe_val)
+                color = "#fff8e1" if i % 2 == 0 else None
+                table.rows.append(ft.DataRow(cells=cells, color=color))
+            table.update()
+            return
+
         for i, (_, row) in enumerate(rows_data, start_index):
             cells = self._make_row_cells(i, row, self._safe_val)
 
@@ -370,8 +570,8 @@ class RandomSelectorUI:
             table.rows[last].color = "#fff8e1" if len(table.rows) % 2 == 0 else None
             table.update()
 
-    def display_selection_result(self, selected_rows, title, saved_to_file):
-        """显示选择结果（逐条动画 + 自动滚动 + 操作禁用）"""
+    def display_selection_result(self, selected_rows, title, saved_to_file, animate=True):
+        """显示选择结果。animate=False 时跳过逐行动画，直接渲染。"""
         self.result_area.controls.clear()
 
         count = len(selected_rows)
@@ -389,8 +589,9 @@ class RandomSelectorUI:
                 )
             )
 
-        # 禁用按钮，防止动画期间误操作
-        self._set_buttons_disabled(True)
+        # 动画期间需要禁用按钮
+        if animate:
+            self._set_buttons_disabled(True)
 
         try:
             # ≤2人：单表
@@ -401,7 +602,7 @@ class RandomSelectorUI:
                 self.result_area.controls.extend(result_cards)
                 self.result_area.page.update()
 
-                self._animate_table_fill(table, list(selected_rows.iterrows()), 1, "sel_table")
+                self._animate_table_fill(table, list(selected_rows.iterrows()), 1, "sel_table", animate=animate)
 
             # >2人：双表平铺，先左后右
             else:
@@ -425,16 +626,17 @@ class RandomSelectorUI:
                 self.result_area.page.update()
 
                 # 先填充左表
-                self._animate_table_fill(left_table, left_rows, 1, "left_table")
+                self._animate_table_fill(left_table, left_rows, 1, "left_table", animate=animate)
                 # 再填充右表
-                self._animate_table_fill(right_table, right_rows, mid + 1, "right_table")
+                self._animate_table_fill(right_table, right_rows, mid + 1, "right_table", animate=animate)
 
         finally:
-            # 恢复按钮
-            self._set_buttons_disabled(False)
+            if animate:
+                self._set_buttons_disabled(False)
 
     def clear_records(self, _e):
         """清空记录"""
+        self._clear_selection_context()
         if not self.personnel_manager.load_data():
             self.result_area.controls.clear()
             self.result_area.controls.append(
@@ -571,6 +773,7 @@ class RandomSelectorUI:
 
     def show_all_personnel(self, e):
         """显示所有人员"""
+        self._clear_selection_context()
         self.result_area.controls.clear()
 
         if not self.personnel_manager.load_data():
@@ -609,6 +812,7 @@ class RandomSelectorUI:
 
     def show_unselected_personnel(self, e):
         """显示未选择的人员"""
+        self._clear_selection_context()
         self.result_area.controls.clear()
 
         if not self.personnel_manager.load_data():
