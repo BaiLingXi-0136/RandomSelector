@@ -78,7 +78,7 @@ class RandomSelectorUI:
 
     def build_main_view(self):
         """构建主界面"""
-        self.result_area = ft.Column([], scroll=ft.ScrollMode.ALWAYS)
+        self.result_area = ft.Column([])
 
         # 模式选择
         self.mode_group = ft.RadioGroup(
@@ -155,7 +155,7 @@ class RandomSelectorUI:
             ft.Column([
                 ft.Text("结果：", weight=ft.FontWeight.BOLD),
                 self.result_area
-            ], expand=True, scroll=ft.ScrollMode.ALWAYS)
+            ], expand=True)
         ], expand=True, scroll=ft.ScrollMode.ALWAYS)
 
     def on_mode_change(self, e):
@@ -388,7 +388,7 @@ class RandomSelectorUI:
         )
         self.result_area.update()
 
-    def show_all_personnel(self, _e):
+    def show_all_personnel(self, e):
         """显示所有人员"""
         self.result_area.controls.clear()
 
@@ -406,31 +406,31 @@ class RandomSelectorUI:
 
         all_personnel = self.personnel_manager.get_all_personnel()
 
-        self.result_area.controls.append(
-            ft.Text("所有人员信息", size=18, weight=ft.FontWeight.BOLD)
-        )
-        self.result_area.controls.append(ft.Divider())
+        result_cards = [
+            ft.Text("所有人员信息", size=18, weight=ft.FontWeight.BOLD),
+            ft.Divider()
+        ]
 
         for i, (_, row) in enumerate(all_personnel.iterrows(), 1):
             person_info = ft.Column([
                 ft.Text(f"人员 {i}：", weight=ft.FontWeight.BOLD),
             ], spacing=2)
 
-            # 显示所有列的信息，跳过"选择时间"列
+            # 显示所有列的信息，跳过"是否已选"和"选择时间"列
             for col in all_personnel.columns:
-                if col == '选择时间':
+                if col in ['是否已选', '选择时间']:
                     continue
-
                 if pd.notna(row[col]):
-                    color = "#4CAF50" if col == '是否已选' else "#666"
                     person_info.controls.append(
-                        ft.Text(f"{col}: {row[col]}", size=12, color=color)
+                        ft.Text(f"{col}: {row[col]}", size=12)
                     )
-                elif col == '是否已选':
-                    # "是否已选"列如果为空，显示"否"
-                    person_info.controls.append(
-                        ft.Text(f"{col}: 否", size=12, color="#666")
-                    )
+
+            # 单独显示选择状态，使用醒目的颜色
+            selected_status = row['是否已选'] if pd.notna(row['是否已选']) else '否'
+            status_color = "#4CAF50" if selected_status == '是' else "#F44336"
+            person_info.controls.append(
+                ft.Text(f"是否已选: {selected_status}", size=12, color=status_color, weight=ft.FontWeight.BOLD)
+            )
 
             card = ft.Container(
                 person_info,
@@ -439,11 +439,11 @@ class RandomSelectorUI:
                 border_radius=5,
                 margin=ft.Margin(top=0, bottom=5, left=0, right=0)
             )
-            self.result_area.controls.append(card)
+            result_cards.append(card)
 
         # 统计信息
         selected_count = (all_personnel['是否已选'] == '是').sum()
-        self.result_area.controls.append(
+        result_cards.append(
             ft.Container(
                 ft.Text(
                     f"\n统计：总人数 {len(all_personnel)}，已选择 {selected_count}，未选择 {len(all_personnel) - selected_count}"),
@@ -454,9 +454,11 @@ class RandomSelectorUI:
             )
         )
 
-        self.result_area.update()
+        self.result_area.controls.extend(result_cards)
+        # 使用 page.update() 进行完整刷新，确保嵌套控件正确渲染
+        e.page.update()
 
-    def show_unselected_personnel(self, _e):
+    def show_unselected_personnel(self, e):
         """显示未选择的人员"""
         self.result_area.controls.clear()
 
@@ -486,10 +488,10 @@ class RandomSelectorUI:
             self.result_area.update()
             return
 
-        self.result_area.controls.append(
-            ft.Text(f"未选择的人员（共{len(unselected_df)}名）", size=18, weight=ft.FontWeight.BOLD)
-        )
-        self.result_area.controls.append(ft.Divider())
+        result_cards = [
+            ft.Text(f"未选择的人员（共{len(unselected_df)}名）", size=18, weight=ft.FontWeight.BOLD),
+            ft.Divider()
+        ]
 
         for i, (_, row) in enumerate(unselected_df.iterrows(), 1):
             person_info = ft.Column([
@@ -497,6 +499,8 @@ class RandomSelectorUI:
             ], spacing=2)
 
             for col in unselected_df.columns:
+                if col in ['是否已选', '选择时间']:
+                    continue
                 if pd.notna(row[col]):
                     person_info.controls.append(
                         ft.Text(f"{col}: {row[col]}", size=12)
@@ -509,9 +513,11 @@ class RandomSelectorUI:
                 border_radius=5,
                 margin=ft.Margin(top=0, bottom=5, left=0, right=0)
             )
-            self.result_area.controls.append(card)
+            result_cards.append(card)
 
-        self.result_area.update()
+        self.result_area.controls.extend(result_cards)
+        # 使用 page.update() 进行完整刷新，确保嵌套控件正确渲染
+        e.page.update()
 
 
 def main(page: ft.Page):
