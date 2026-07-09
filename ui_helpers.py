@@ -61,9 +61,8 @@ def show_about_dialog(e):
     page.open(dialog)
 
 
-def show_help_dialog(e):
-    """打开使用说明对话框，内容从 README.md 读取"""
-    page = e.page
+def open_help_dialog(page: ft.Page):
+    """在给定 page 上打开使用说明对话框（内容从 README.md 读取）"""
     readme_path = RESOURCE_DIR / "README.md"
     try:
         help_text = readme_path.read_text(encoding="utf-8")
@@ -89,6 +88,11 @@ def show_help_dialog(e):
         ],
     )
     page.open(dialog)
+
+
+def show_help_dialog(e):
+    """菜单栏事件处理器：打开使用说明对话框"""
+    open_help_dialog(e.page)
 
 
 # ==================== 表格构建 ====================

@@ -1,4 +1,5 @@
-"""随机选择人员系统 — UI 层"""
+"""随机点名系统 — UI 层"""
+import threading
 import flet as ft
 import pandas as pd
 import time
@@ -35,6 +36,12 @@ class RandomSelectorUI:
         # 回溯功能 UI 控件引用（每次 _build_backtrack_panel 时重建）
         self._backtrack_input = None
         self._btn_backtrack = None
+        self._backtrack_error = None
+
+        # 文件占用状态
+        self._file_locked = False
+        self._mopping_radio = None
+        self._file_lock_warning = None    # 全局警告栏（位于主界面顶部）
 
         # 状态显示
         self.status_text = None
@@ -263,7 +270,7 @@ class RandomSelectorUI:
         mode_label = "拖地模式" if self._last_mode == "mopping" else "临时模式"
         lines = [
             "=" * 40,
-            "随机选择人员系统 - 抽选结果",
+            "随机点名系统 - 抽选结果",
             "=" * 40,
             "",
             f"导出时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
@@ -371,10 +378,11 @@ class RandomSelectorUI:
         self._build_menu_bar()
 
         # 模式选择
+        self._mopping_radio = ft.Radio(label="拖地模式（选择3人，保存状态）", value="mopping")
         self.mode_group = ft.RadioGroup(
             content=ft.Column([
                 ft.Radio(label="临时模式（不保存状态）", value="temporary"),
-                ft.Radio(label="拖地模式（选择3人，保存状态）", value="mopping")
+                self._mopping_radio,
             ]),
             value="temporary",
             on_change=self.on_mode_change
@@ -400,15 +408,21 @@ class RandomSelectorUI:
             width=100,
             keyboard_type=ft.KeyboardType.NUMBER,
             text_align=ft.TextAlign.CENTER,
-            visible=True
+            visible=True,
+            on_change=self._validate_temp_count,
+            border_color="#4CAF50",
         )
+        self._temp_count_error = ft.Text("", size=12, color="#D32F2F", visible=False)
 
         # 创建包裹输入框的容器
         self.temp_input_container = ft.Column([
             ft.Row([
                 ft.Text("选择人数："),
                 self.temp_count_input
-            ], alignment=ft.MainAxisAlignment.CENTER)
+            ], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Row([
+                self._temp_count_error,
+            ], alignment=ft.MainAxisAlignment.CENTER),
         ], visible=True)
 
         # 按钮区域
@@ -437,10 +451,25 @@ class RandomSelectorUI:
 
         # 组合所有元素
         self.status_text = ft.Text("", size=14, color="#666666", italic=True)
+        self._file_lock_warning = ft.Container(
+            ft.Row([
+                ft.Icon(ft.Icons.WARNING_AMBER, color="#E65100", size=18),
+                ft.Text(
+                    "文件被占用，无法保存！请关闭其他程序中打开的名单文件后重试。拖地模式已禁用。",
+                    color="#E65100", size=13, weight=ft.FontWeight.BOLD,
+                ),
+            ], spacing=8),
+            bgcolor="#FFF3E0",
+            border_radius=6,
+            padding=ft.Padding(top=8, bottom=8, left=12, right=12),
+            margin=ft.Margin(top=0, bottom=4, left=0, right=0),
+            visible=False,
+        )
         self.main_column = ft.Column([
-            ft.Text("随机选择人员系统", size=24, weight=ft.FontWeight.BOLD),
+            ft.Text("随机点名系统", size=24, weight=ft.FontWeight.BOLD),
             self.menu_bar,
             self.status_text,
+            self._file_lock_warning,
             ft.Divider(),
             mode_control,
 
@@ -474,10 +503,137 @@ class RandomSelectorUI:
         self.temp_input_container.update()
         self.temp_count_input.update()
 
+    def _validate_temp_count(self, e):
+        """实时校验临时模式人数输入：仅允许 1~20 的正整数"""
+        raw = (e.control.value or "").strip()
+        error = None
+        try:
+            val = int(raw)
+            if val < 1:
+                error = "人数不能小于 1"
+            elif val > 20:
+                error = "人数不能超过 20"
+        except ValueError:
+            error = "请输入有效的正整数"
+
+        if error:
+            e.control.border_color = "#D32F2F"
+            self._temp_count_error.value = f"⚠ {error}"
+            self._temp_count_error.visible = True
+        else:
+            e.control.border_color = "#4CAF50"
+            self._temp_count_error.visible = False
+
+        e.control.update()
+        self._temp_count_error.update()
+
+    def _is_temp_count_valid(self) -> bool:
+        """返回临时模式输入值是否合法（1~20 正整数）"""
+        raw = (self.temp_count_input.value or "").strip()
+        try:
+            val = int(raw)
+            return 1 <= val <= 20
+        except ValueError:
+            return False
+
+    def _safe_save(self) -> bool:
+        """安全保存：捕获文件占用异常，触发锁定警告。返回 True 表示保存成功。"""
+        try:
+            self.personnel_manager.save_data()
+            return True
+        except (PermissionError, OSError):
+            self._handle_file_locked()
+            return False
+
+    def _handle_file_locked(self):
+        """文件被占用时：显示警告并禁用拖地模式"""
+        self._file_locked = True
+
+        # 显示全局警告栏
+        if self._file_lock_warning is not None and self._file_lock_warning.page is not None:
+            self._file_lock_warning.visible = True
+            self._file_lock_warning.update()
+
+        # 禁用拖地模式
+        if self._mopping_radio is not None and self._mopping_radio.page is not None:
+            self._mopping_radio.disabled = True
+            self._mopping_radio.update()
+
+        # 如果当前是拖地模式，强制切到临时模式
+        if self.current_mode == "mopping":
+            self.current_mode = "temporary"
+            self.mode_group.value = "temporary"
+            self.mode_group.update()
+            self.temp_input_container.visible = True
+            self.temp_input_container.disabled = False
+            self.temp_input_container.update()
+            self.temp_count_input.disabled = False
+            self.temp_count_input.update()
+
+    def _check_file_writable(self) -> bool:
+        """检测当前数据文件是否可写（未被其他程序占用）"""
+        path = self.personnel_manager.file_path
+        if not path.exists():
+            # 文件不存在则检查父目录是否可写
+            try:
+                test_file = path.parent / ".writable_test"
+                test_file.touch()
+                test_file.unlink()
+                return True
+            except (PermissionError, OSError):
+                return False
+        try:
+            with open(path, 'a'):
+                pass
+            return True
+        except (PermissionError, OSError):
+            return False
+
+    def start_file_monitor(self, page: ft.Page):
+        """启动后台线程，实时监测文件占用状态"""
+        def _check():
+            """执行一次检测并更新 UI 状态"""
+            try:
+                writable = self._check_file_writable()
+                if self._file_locked and writable:
+                    self._file_locked = False
+                    if self._file_lock_warning is not None:
+                        self._file_lock_warning.visible = False
+                        self._file_lock_warning.update()
+                    if self._mopping_radio is not None:
+                        self._mopping_radio.disabled = False
+                        self._mopping_radio.update()
+                elif not self._file_locked and not writable:
+                    self._handle_file_locked()
+            except Exception:
+                pass
+
+        def _monitor():
+            # 启动时立即检查一次
+            _check()
+            while True:
+                time.sleep(3)
+                _check()
+
+        threading.Thread(target=_monitor, daemon=True).start()
+
     def start_selection(self, _e):
         """开始选择"""
         self._clear_selection_context()
         self.result_area.controls.clear()
+
+        # 文件被占用时不允许拖地模式
+        if self._file_locked and self.current_mode == "mopping":
+            self.result_area.controls.append(
+                ft.Container(
+                    ft.Text("文件被占用，无法使用拖地模式！请关闭其他程序中打开的名单文件后重启程序。"),
+                    bgcolor="#ffebee",
+                    padding=10,
+                    border_radius=5,
+                )
+            )
+            self.result_area.update()
+            return
 
         if not self.personnel_manager.load_data():
             self.result_area.controls.append(
@@ -494,16 +650,18 @@ class RandomSelectorUI:
         if self.current_mode == "temporary":
             self.temporary_mode_selection()
         else:
-            self.mopping_mode_selection()
+            self.mopping_mode_selection(_e)
 
     def temporary_mode_selection(self):
         """临时模式选择"""
-        try:
-            count = int(self.temp_count_input.value) if self.temp_count_input.value else 1
-            if count <= 0:
-                count = 1
-        except ValueError:
-            count = 1
+        if not self._is_temp_count_valid():
+            # 触发校验以显示错误提示
+            self._validate_temp_count(
+                type("_e", (), {"control": self.temp_count_input})()
+            )
+            return
+
+        count = int(self.temp_count_input.value.strip())
 
         # 获取所有人员（临时模式忽略选择状态）
         all_personnel = self.personnel_manager.get_all_personnel()
@@ -536,8 +694,84 @@ class RandomSelectorUI:
         if self.main_column is not None:
             self.main_column.scroll_to(key="backtrack_panel", duration=300)
 
-    def mopping_mode_selection(self):
-        """拖地模式选择"""
+    def mopping_mode_selection(self, e=None):
+        """拖地模式选择（入口：含每日限抽一次检查）"""
+        # 检查今天是否已经抽选过
+        if self._has_today_selection():
+            if e is not None:
+                self._show_mopping_redo_dialog(e)
+            else:
+                self._do_mopping_selection()
+            return
+        self._do_mopping_selection()
+
+    def _has_today_selection(self):
+        """检查今天是否已有拖地模式抽选记录"""
+        if not self.personnel_manager.load_data():
+            return False
+        df = self.personnel_manager.df
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        mask = (df['是否已选'] == '是') & (
+            df['选择时间'].astype(str).str.startswith(today_str)
+        )
+        return mask.any()
+
+    def _show_mopping_redo_dialog(self, e):
+        """弹出确认对话框：今天已抽选过，是否清除最近3条记录并重新抽选"""
+        page = e.page
+
+        def on_confirm(_e):
+            page.close(dialog)
+            self._do_mopping_redo()
+
+        def on_cancel(_e):
+            page.close(dialog)
+
+        dialog = ft.AlertDialog(
+            title=ft.Text("今日已抽选"),
+            content=ft.Text(
+                "今天已经进行过一次拖地模式抽选。\n"
+                "若确认重新抽选，将清除最近3条拖地记录并重新随机选择3人。\n\n"
+                "确定要继续吗？"
+            ),
+            actions=[
+                ft.TextButton("取消", on_click=on_cancel),
+                ft.TextButton("确认重新抽选", on_click=on_confirm),
+            ],
+        )
+        page.open(dialog)
+
+    def _do_mopping_redo(self):
+        """清除最近3条已选记录，然后重新抽选"""
+        if not self.personnel_manager.load_data():
+            return
+
+        df = self.personnel_manager.df
+        selected_mask = df['是否已选'] == '是'
+        selected_df = df[selected_mask].copy()
+
+        if not selected_df.empty:
+            # 按选择时间降序排列，取最近3条
+            selected_df['_sort_time'] = pd.to_datetime(
+                selected_df['选择时间'], errors='coerce'
+            )
+            latest_3 = selected_df.sort_values(
+                '_sort_time', ascending=False
+            ).head(3)
+
+            # 清除这3人的选中状态
+            self.personnel_manager.update_selection_status(
+                latest_3.index, selected=False
+            )
+            self._safe_save()
+
+        # 清空结果区域并重新抽选
+        self._clear_selection_context()
+        self.result_area.controls.clear()
+        self._do_mopping_selection()
+
+    def _do_mopping_selection(self):
+        """执行拖地模式抽选（核心逻辑）"""
         unselected_count = len(self.personnel_manager.get_unselected_personnel())
 
         if unselected_count >= 3:
@@ -548,7 +782,7 @@ class RandomSelectorUI:
 
             # 更新选择状态
             self.personnel_manager.update_selection_status(indices, selected=True)
-            self.personnel_manager.save_data()
+            self._safe_save()
 
             # 显示结果
             self.display_selection_result(selected_rows, "拖地模式 - 已选择3名人员", True)
@@ -575,7 +809,7 @@ class RandomSelectorUI:
 
             # 更新选择状态
             self.personnel_manager.update_selection_status(indices, selected=True)
-            self.personnel_manager.save_data()
+            self._safe_save()
 
             # 显示结果
             self.display_selection_result(selected_rows, f"拖地模式 - 已选择剩余{unselected_count}名人员", True)
@@ -647,8 +881,61 @@ class RandomSelectorUI:
         return match.index[0], match.iloc[0]
 
     def _show_backtrack_error(self, message):
-        """在结果区域顶部显示回溯错误信息"""
-        self._show_result_error(message)
+        """在回溯输入框上显示错误（红框 + 提示文字）"""
+        if self._backtrack_input is not None and self._backtrack_input.page is not None:
+            self._backtrack_input.border_color = "#D32F2F"
+            self._backtrack_input.update()
+        if self._backtrack_error is not None and self._backtrack_error.page is not None:
+            self._backtrack_error.value = f"⚠ {message}"
+            self._backtrack_error.color = "#D32F2F"
+            self._backtrack_error.visible = True
+            self._backtrack_error.update()
+        # 自动滚动使错误可见
+        if self.main_column is not None:
+            self.main_column.scroll_to(key="backtrack_panel", duration=200)
+
+    def _on_backtrack_input_change(self, e):
+        """回溯输入框实时校验：查询学号是否在当前选中列表中"""
+        raw = (e.control.value or "").strip()
+
+        # 空输入：恢复默认状态，不提示
+        if not raw:
+            e.control.border_color = None
+            e.control.update()
+            if self._backtrack_error is not None and self._backtrack_error.page is not None:
+                self._backtrack_error.visible = False
+                self._backtrack_error.update()
+            return
+
+        # 无上下文可查询
+        if self._last_selected_rows is None or self._last_selected_rows.empty:
+            return
+
+        # 实时查询学号
+        idx, person_row = self._find_person_in_selection(raw)
+        if idx is not None:
+            # 找到：绿色边框 + 显示姓名确认
+            name = safe_val(person_row['姓名'])
+            e.control.border_color = "#4CAF50"
+            e.control.update()
+            if self._backtrack_error is not None and self._backtrack_error.page is not None:
+                self._backtrack_error.value = f"✓ 找到：{name}"
+                self._backtrack_error.color = "#2E7D32"
+                self._backtrack_error.visible = True
+                self._backtrack_error.update()
+                if self.main_column is not None:
+                    self.main_column.scroll_to(key="backtrack_panel", duration=200)
+        else:
+            # 未找到：红色边框 + 错误提示 + 自动滚动
+            e.control.border_color = "#D32F2F"
+            e.control.update()
+            if self._backtrack_error is not None and self._backtrack_error.page is not None:
+                self._backtrack_error.value = "⚠ 该学号不在当前选中列表中"
+                self._backtrack_error.color = "#D32F2F"
+                self._backtrack_error.visible = True
+                self._backtrack_error.update()
+                if self.main_column is not None:
+                    self.main_column.scroll_to(key="backtrack_panel", duration=200)
 
     def _build_backtrack_panel(self):
         """构建回溯 UI 面板，无上下文时返回空列表"""
@@ -661,7 +948,9 @@ class RandomSelectorUI:
             width=200,
             keyboard_type=ft.KeyboardType.TEXT,
             text_align=ft.TextAlign.CENTER,
+            on_change=self._on_backtrack_input_change,
         )
+        self._backtrack_error = ft.Text("", size=12, color="#D32F2F", visible=False)
         self._btn_backtrack = ft.ElevatedButton(
             "回溯替换",
             on_click=self._do_backtrack,
@@ -679,6 +968,10 @@ class RandomSelectorUI:
             ),
             ft.Row(
                 [self._backtrack_input, self._btn_backtrack],
+                alignment=ft.MainAxisAlignment.CENTER,
+            ),
+            ft.Row(
+                [self._backtrack_error],
                 alignment=ft.MainAxisAlignment.CENTER,
             ),
         ]
@@ -717,7 +1010,7 @@ class RandomSelectorUI:
         else:
             # 拖地模式：先还原被排除者的状态
             self.personnel_manager.update_selection_status([idx], selected=False)
-            self.personnel_manager.save_data()
+            self._safe_save()
 
             # 池 = 未选人员 - 剩余选中人员
             unselected = self.personnel_manager.get_unselected_personnel()
@@ -728,7 +1021,7 @@ class RandomSelectorUI:
             if self._last_mode == "mopping":
                 # 回滚：恢复被排除者的选中状态
                 self.personnel_manager.update_selection_status([idx], selected=True)
-                self.personnel_manager.save_data()
+                self._safe_save()
             self._show_backtrack_error("没有可用的替换人员，无法进行回溯")
             return
 
@@ -740,7 +1033,7 @@ class RandomSelectorUI:
         # 7. 拖地模式：标记替换者为已选并保存
         if self._last_mode == "mopping":
             self.personnel_manager.update_selection_status([replacement_idx], selected=True)
-            self.personnel_manager.save_data()
+            self._safe_save()
 
         # 8. 构建新的选中列表（替换人员插入到被排除者的原位置）
         parts_before = remaining.iloc[:pos]
@@ -768,7 +1061,7 @@ class RandomSelectorUI:
 
     # ==================== 结果显示 ====================
 
-    def _animate_table_fill(self, table, rows_data, start_index, scroll_target, animate=True):
+    def _animate_table_fill(self, table, rows_data, start_index, scroll_target, live_text, animate=True):
         """逐行动画填充一个表格。animate=False 时直接全部填充，无延迟。"""
         if not animate:
             # 直接填充所有行，无动画
@@ -777,10 +1070,22 @@ class RandomSelectorUI:
                 color = "#fff8e1" if i % 2 == 0 else None
                 table.rows.append(ft.DataRow(cells=cells, color=color))
             table.update()
+            # 最后一个人留在实时显示区
+            if rows_data and live_text is not None:
+                _, last_row = rows_data[-1]
+                name = safe_val(last_row['姓名'])
+                live_text.value = f"🎯 {name}"
+                live_text.update()
             return
 
         for i, (_, row) in enumerate(rows_data, start_index):
             cells = make_row_cells(i, row)
+
+            # 实时更新当前人员显示
+            if live_text is not None:
+                name = safe_val(row['姓名'])
+                live_text.value = f"🎯 {name}"
+                live_text.update()
 
             # 新行亮黄高亮
             table.rows.append(ft.DataRow(cells=cells, color="#FFF9C4"))
@@ -807,9 +1112,35 @@ class RandomSelectorUI:
         self.result_area.controls.clear()
 
         count = len(selected_rows)
+
+        # 实时显示区：大幅凸显当前选中人员姓名
+        live_name_text = ft.Text(
+            "准备抽取...",
+            size=56,
+            weight=ft.FontWeight.BOLD,
+            text_align=ft.TextAlign.CENTER,
+            color="#1a1a1a",
+        )
+        live_display = ft.Container(
+            ft.Column(
+                [
+                    ft.Text("当前选中", size=14, color="#888888", text_align=ft.TextAlign.CENTER),
+                    live_name_text,
+                ],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=4,
+            ),
+            bgcolor="#f5f5f5",
+            border_radius=12,
+            padding=ft.Padding(top=20, bottom=20, left=20, right=20),
+            margin=ft.Margin(top=0, bottom=16, left=0, right=0),
+            alignment=ft.alignment.center,
+        )
+
         result_cards = [
             ft.Text(title, size=18, weight=ft.FontWeight.BOLD),
-            ft.Divider()
+            ft.Divider(),
+            live_display,
         ]
 
         # 提示信息
@@ -834,7 +1165,7 @@ class RandomSelectorUI:
                 self.result_area.controls.extend(result_cards)
                 self.result_area.page.update()
 
-                self._animate_table_fill(table, list(selected_rows.iterrows()), 1, "sel_table", animate=animate)
+                self._animate_table_fill(table, list(selected_rows.iterrows()), 1, "sel_table", live_name_text, animate=animate)
 
             # >2人：双表平铺，先左后右
             else:
@@ -858,9 +1189,9 @@ class RandomSelectorUI:
                 self.result_area.page.update()
 
                 # 先填充左表
-                self._animate_table_fill(left_table, left_rows, 1, "left_table", animate=animate)
+                self._animate_table_fill(left_table, left_rows, 1, "left_table", live_name_text, animate=animate)
                 # 再填充右表
-                self._animate_table_fill(right_table, right_rows, mid + 1, "right_table", animate=animate)
+                self._animate_table_fill(right_table, right_rows, mid + 1, "right_table", live_name_text, animate=animate)
 
         finally:
             if animate:

@@ -28,7 +28,7 @@ RESOURCE_DIR = get_resource_path()
 
 CONFIG_DIR = BASE_DIR / "config"
 DATA_DIR = CONFIG_DIR / "data"
-DEFAULT_EXCEL_FILE = DATA_DIR / "PersonnelList.xlsx"
+DEFAULT_EXCEL_FILE = DATA_DIR / "DefaultList.xlsx"
 SETTINGS_FILE = CONFIG_DIR / "settings.json"
 
 
@@ -42,8 +42,8 @@ def bootstrap():
 
     # 复制默认 Excel 文件
     _copy_if_missing(
-        "PersonnelList.xlsx",
-        RESOURCE_DIR / "config" / "data" / "PersonnelList.xlsx",
+        "DefaultList.xlsx",
+        RESOURCE_DIR / "config" / "data" / "DefaultList.xlsx",
         DEFAULT_EXCEL_FILE,
     )
 
