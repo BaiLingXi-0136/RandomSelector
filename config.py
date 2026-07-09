@@ -53,7 +53,7 @@ def _copy_if_missing(name: str, src: Path, dest: Path):
     if not dest.exists() and src.exists():
         try:
             shutil.copy2(src, dest)
-        except OSError:
+        except Exception:
             pass  # 复制失败不阻塞启动
 
 
@@ -62,7 +62,7 @@ def load_settings() -> dict:
     try:
         if SETTINGS_FILE.exists():
             return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
-    except (Exception,):
+    except Exception:
         pass
     return {}
 
@@ -78,7 +78,7 @@ def save_settings(settings: dict):
             json.dumps(current, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-    except (Exception,):
+    except Exception:
         pass
 
 

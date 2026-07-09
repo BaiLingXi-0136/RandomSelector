@@ -39,7 +39,7 @@ class PersonnelManager:
                 # 转换现有数据为字符串类型
                 self.df['选择时间'] = self.df['选择时间'].astype(str)
             return True
-        except (Exception, FileNotFoundError):
+        except Exception:
             return False
 
     def get_unselected_personnel(self) -> pd.DataFrame:

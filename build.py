@@ -3,7 +3,7 @@
 将应用打包为独立可执行文件。
 运行方式：python build.py
 
-打包后的文件位于 dist/随机点名系统/ 目录下。
+打包后的文件位于 dist/RandomSelector/ 目录下。
 """
 import os
 import sys
@@ -13,7 +13,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent
 
 # -------- 配置 --------
-APP_NAME = "随机点名系统"
+APP_NAME = "RandomSelector"
 ENTRY_SCRIPT = "main.py"
 ICON_FILE = "config/icon.ico"
 
@@ -21,7 +21,7 @@ ICON_FILE = "config/icon.ico"
 DATAS = [
     ("config/icon.ico", "config"),
     ("config/ABOUT.md", "config"),
-    ("config/data/PersonnelList.xlsx", "config/data"),
+    ("config/data/DefaultList.xlsx", "config/data"),
     ("README.md", "."),
 ]
 
