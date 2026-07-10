@@ -5,7 +5,7 @@
 import flet as ft
 from typing import Callable
 
-from config import RESOURCE_DIR
+from config import BASE_DIR, RESOURCE_DIR
 from constants import (
     BTN_CANCEL, BTN_CONFIRM, COLOR_HINT, COLOR_SUBTLE,
     FONT_SIZE_HINT, HINT_SEED, SEED_INPUT_WIDTH,
@@ -46,10 +46,16 @@ def on_menu_about(e):
 
 def open_help_dialog(page: ft.Page):
     """在给定 page 上打开使用说明对话框（内容从 README.md 读取）"""
-    readme_path = RESOURCE_DIR / "README.md"
-    try:
-        help_text = readme_path.read_text(encoding="utf-8")
-    except OSError:
+    # 优先从资源目录查找（开发模式），其次从 exe 所在目录查找（打包后）
+    for base in (RESOURCE_DIR, BASE_DIR):
+        readme_path = base / "README.md"
+        if readme_path.exists():
+            try:
+                help_text = readme_path.read_text(encoding="utf-8")
+                break
+            except OSError:
+                continue
+    else:
         help_text = "无法加载使用说明"
 
     dialog = ft.AlertDialog(

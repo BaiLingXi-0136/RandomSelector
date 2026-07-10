@@ -1,4 +1,5 @@
 """随机点名系统 — UI 层"""
+import random as _stdlib_random
 import time
 import pandas as pd
 import flet as ft
@@ -15,7 +16,7 @@ from constants import (
     FONT_SIZE_BODY, FONT_SIZE_HINT, FONT_SIZE_LIVE, FONT_SIZE_SECTION, FONT_SIZE_SMALL,
     FONT_SIZE_TITLE, LABEL_MODE_GROUP, LABEL_MODE_MOPPING, LABEL_MODE_TEMPORARY,
     MAX_SELECTION_COUNT, MIN_SELECTION_COUNT, MOPPING_COUNT,
-    BACKTRACK_INPUT_WIDTH, ANIMATION_DELAY,
+    BACKTRACK_INPUT_WIDTH, ANIMATION_DELAY, DEFAULT_SEED,
     BTN_START, BTN_SHOW_ALL, BTN_SHOW_UNSELECTED, BTN_CLEAR, BTN_BACKTRACK,
     MENU_FILE, MENU_EDIT, MENU_VIEW, MENU_TOOLS, MENU_HELP,
     WARN_FILE_LOCKED, WARN_FILE_LOCKED_SELECTION,
@@ -53,6 +54,7 @@ class RandomSelectorUI:
         # 回溯功能
         self._last_selected_rows: pd.DataFrame | None = None
         self._last_mode: str | None = None
+        self._last_effective_seed: int | None = None
         self._backtrack_input: ft.TextField | None = None
         self._btn_backtrack: ft.ElevatedButton | None = None
         self._backtrack_error: ft.Text | None = None
@@ -71,13 +73,20 @@ class RandomSelectorUI:
         # 种子设置
         settings = load_settings()
         self._seed_enabled: bool = settings.get("seed_enabled", False)
-        self._seed_value: int = settings.get("seed_value", 42)
+        self._seed_value: int = settings.get("seed_value", DEFAULT_SEED)
+        self._effective_seed: int | None = None   # 本次抽选实际使用的种子
 
     # ==================== 辅助属性 ====================
 
     @property
-    def _random_state(self) -> int | None:
-        return self._seed_value if self._seed_enabled else None
+    def _random_state(self) -> int:
+        """返回本次抽选的种子，若未指定则自动生成一个并缓存"""
+        if self._effective_seed is None:
+            if self._seed_enabled:
+                self._effective_seed = self._seed_value
+            else:
+                self._effective_seed = _stdlib_random.randint(1, 2**31 - 1)
+        return self._effective_seed
 
     @property
     def _is_file_locked(self) -> bool:
@@ -233,6 +242,7 @@ class RandomSelectorUI:
         file_path = export_dir / file_name
 
         mode_label = "拖地模式" if self._last_mode == "mopping" else "临时模式"
+        seed_info = str(self._last_effective_seed) if self._last_effective_seed is not None else "未知"
         lines = [
             "=" * 40,
             f"{APP_TITLE} - 抽选结果",
@@ -241,6 +251,7 @@ class RandomSelectorUI:
             f"导出时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             f"抽选模式：{mode_label}",
             f"选中人数：{len(self._last_selected_rows)}",
+            f"随机种子：{seed_info}",
             "",
             "-" * 40,
             "选中人员列表",
@@ -565,6 +576,7 @@ class RandomSelectorUI:
 
     def start_selection(self, _e):
         self._clear_selection_context()
+        self._effective_seed = None  # 每次抽选重新确定种子
         self.result_area.controls.clear()
 
         if self._is_file_locked and self.current_mode == "mopping":
@@ -653,6 +665,7 @@ class RandomSelectorUI:
         return mask.any()
 
     def _do_mopping_redo(self):
+        self._effective_seed = None  # 重抽时重新确定种子
         if not self.personnel_manager.load_data():
             return
 
@@ -752,10 +765,12 @@ class RandomSelectorUI:
     def _save_selection_context(self, selected_rows: pd.DataFrame, mode: str):
         self._last_selected_rows = selected_rows.copy()
         self._last_mode = mode
+        self._last_effective_seed = self._effective_seed
 
     def _clear_selection_context(self):
         self._last_selected_rows = None
         self._last_mode = None
+        self._last_effective_seed = None
 
     def _find_person_in_selection(self, student_id: str) -> tuple:
         if self._last_selected_rows is None or self._last_selected_rows.empty:

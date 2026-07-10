@@ -12,6 +12,7 @@ MIN_SELECTION_COUNT = 1
 MOPPING_COUNT = 3            # 拖地模式默认选择人数
 FILE_MONITOR_INTERVAL = 3    # 文件占用检测间隔（秒）
 ANIMATION_DELAY = 0.35       # 逐行动画延迟（秒）
+DEFAULT_SEED = 1589564
 
 # ==================== 颜色 ====================
 COLOR_PRIMARY = "#4CAF50"

@@ -35,9 +35,7 @@ class PersonnelManager:
             # 确保'选择时间'列存在且为字符串类型
             if '选择时间' not in self.df.columns:
                 self.df['选择时间'] = ''
-            else:
-                # 转换现有数据为字符串类型
-                self.df['选择时间'] = self.df['选择时间'].astype(str)
+            self.df['选择时间'] = self.df['选择时间'].fillna('').astype(str).replace('nan', '')
             return True
         except Exception:
             return False
@@ -57,12 +55,10 @@ class PersonnelManager:
     def update_selection_status(self, indices, selected: bool = True):
         """更新选择状态"""
         if self.df is not None:
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             for idx in indices:
                 self.df.at[idx, '是否已选'] = '是' if selected else '否'
-                if selected:
-                    self.df.at[idx, '选择时间'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    # 确保选择时间列保持字符串类型
-                    self.df['选择时间'] = self.df['选择时间'].astype(str)
+                self.df.at[idx, '选择时间'] = now if selected else ''
 
     def save_data(self):
         """保存数据到文件"""
