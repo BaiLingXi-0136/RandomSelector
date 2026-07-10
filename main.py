@@ -4,6 +4,7 @@ import ctypes
 import flet as ft
 from config import bootstrap, RESOURCE_DIR, load_settings, save_settings
 from constants import APP_TITLE, FONT_FAMILY, MUTEX_NAME, WINDOW_WIDTH, WINDOW_HEIGHT
+from error_handler import setup_error_handler
 from random_selector_ui import RandomSelectorUI
 from dialogs import open_help_dialog
 
@@ -31,6 +32,7 @@ def _ensure_single_instance() -> bool:
 def main(page: ft.Page):
     """主函数"""
     bootstrap()
+    setup_error_handler(page)
 
     page.title = APP_TITLE
     page.theme_mode = ft.ThemeMode.LIGHT

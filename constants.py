@@ -6,6 +6,7 @@ APP_VERSION = "4.3"
 MUTEX_NAME = r"Local\RandomSelector_v4"
 
 # ==================== 数值限制 ====================
+MAX_LOG_FILES = 20            # 错误日志文件最大保留数量
 MAX_SELECTION_COUNT = 20
 MIN_SELECTION_COUNT = 1
 MOPPING_COUNT = 3            # 拖地模式默认选择人数
@@ -93,3 +94,6 @@ WARN_ALL_SELECTED = "所有人员都已被选择过！"
 HINT_TEMP_NOT_SAVED = "提示：此为临时选择，未保存到原文件"
 HINT_BACKTRACK_USAGE = "如选中人员请假或有特殊情况，可输入其学号进行回溯替换"
 HINT_SEED = "💡 相同种子 + 相同数据文件 = 相同的抽选结果"
+
+# ==================== 测试/调试 ====================
+TEST_ERROR_MESSAGE = "这是一条测试异常，用于验证错误捕获机制是否正常工作。"

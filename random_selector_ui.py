@@ -20,7 +20,7 @@ from constants import (
     MENU_FILE, MENU_EDIT, MENU_VIEW, MENU_TOOLS, MENU_HELP,
     WARN_FILE_LOCKED, WARN_FILE_LOCKED_SELECTION,
     WARN_LOAD_FAILED, WARN_EMPTY_LIST, WARN_ALL_SELECTED, WARN_NO_EXPORT_DATA,
-    HINT_TEMP_NOT_SAVED, HINT_BACKTRACK_USAGE,
+    HINT_TEMP_NOT_SAVED, HINT_BACKTRACK_USAGE, TEST_ERROR_MESSAGE,
 )
 from dialogs import (
     on_menu_about, on_menu_help,
@@ -155,6 +155,12 @@ class RandomSelectorUI:
                         menu_item("选项...", "",
                                   icon=ft.Icon(ft.Icons.SETTINGS),
                                   on_click=self._on_options_click),
+                        ft.MenuItemButton(),
+                        menu_item("测试错误捕获", "",
+                                  icon=ft.Icon(ft.Icons.BUG_REPORT),
+                                  on_click=lambda _: (_ for _ in ()).throw(
+                                      RuntimeError(TEST_ERROR_MESSAGE)),
+                                  ),
                     ],
                 ),
                 ft.SubmenuButton(
