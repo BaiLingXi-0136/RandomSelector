@@ -896,6 +896,9 @@ class RandomSelectorUI:
             unselected = self.personnel_manager.get_unselected_personnel()
             pool = unselected[~unselected.index.isin(remaining.index)]
 
+        # 排除被回溯的人员自身，防止"替换"回同一个人
+        pool = pool[pool.index != idx]
+
         if pool.empty:
             if self._last_mode == "mopping":
                 self.personnel_manager.update_selection_status([idx], selected=True)
@@ -903,7 +906,10 @@ class RandomSelectorUI:
             self._show_backtrack_error("没有可用的替换人员，无法进行回溯")
             return
 
-        replacement = pool.sample(n=1, random_state=self._random_state)
+        # 每次回溯使用独立随机种子，避免同一种子在不同回溯中产生相同替换人选
+        backtrack_seed = self._random_state  # 通过 property 获取（种子模式返回固定值，否则随机生成）
+        self._effective_seed = None          # 下次回溯将生成新种子
+        replacement = pool.sample(n=1, random_state=backtrack_seed)
         replacement_idx = replacement.index[0]
         replacement_name = safe_val(replacement.iloc[0]['姓名'])
 
