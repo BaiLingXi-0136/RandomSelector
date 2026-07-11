@@ -59,6 +59,8 @@ class RandomSelectorUI:
         self._btn_backtrack: ft.ElevatedButton | None = None
         self._backtrack_error: ft.Text | None = None
         self._temp_count_error: ft.Text | None = None
+        # 本轮抽选中被回溯剔除的人员学号（新一轮抽选时清空）
+        self._backtracked_ids: set[str] = set()
 
         # 文件占用
         self._mopping_radio: ft.Radio | None = None
@@ -576,6 +578,7 @@ class RandomSelectorUI:
 
     def start_selection(self, _e):
         self._clear_selection_context()
+        self._backtracked_ids.clear()  # 新一轮抽选，重置回溯排除名单
         self._effective_seed = None  # 每次抽选重新确定种子
         self.result_area.controls.clear()
 
@@ -618,6 +621,7 @@ class RandomSelectorUI:
         count = int(self.temp_count_input.value.strip())
 
         all_personnel = self.personnel_manager.get_all_personnel()
+        all_personnel = self._filter_out_backtracked(all_personnel)
         if all_personnel.empty:
             self.result_area.controls.append(
                 ft.Container(
@@ -715,19 +719,33 @@ class RandomSelectorUI:
     def _mopping_select_n(self, n: int, remaining: int):
         """从可选人员中随机选 n 人，标记已选并保存"""
         unselected_df = self.personnel_manager.get_unselected_personnel()
-        selected_rows = unselected_df.sample(n=n, random_state=self._random_state)
+        unselected_df = self._filter_out_backtracked(unselected_df)
+        if unselected_df.empty:
+            self.result_area.controls.append(
+                ft.Container(
+                    ft.Text(WARN_ALL_SELECTED),
+                    bgcolor=COLOR_WARNING_BG,
+                    padding=10,
+                    border_radius=5,
+                )
+            )
+            self.result_area.update()
+            return
+        actual_n = min(n, len(unselected_df))
+        selected_rows = unselected_df.sample(n=actual_n, random_state=self._random_state)
 
         self.personnel_manager.update_selection_status(selected_rows.index, selected=True)
         self._safe_save()
 
-        title = f"拖地模式 - 已选择{n}名人员"
+        title = f"拖地模式 - 已选择{actual_n}名人员"
         self.display_selection_result(selected_rows, title, True)
 
-        # 显示剩余人数提示
-        if remaining > 0:
+        # 显示剩余人数提示（基于过滤后的实际可用人数）
+        actual_remaining = len(unselected_df) - actual_n
+        if actual_remaining > 0:
             self.result_area.controls.append(
                 ft.Container(
-                    ft.Text(f"提示：剩余未选择人员：{remaining}名"),
+                    ft.Text(f"提示：剩余未选择人员：{actual_remaining}名"),
                     bgcolor=COLOR_SUCCESS_BG,
                     padding=10,
                     border_radius=5,
@@ -771,6 +789,15 @@ class RandomSelectorUI:
         self._last_selected_rows = None
         self._last_mode = None
         self._last_effective_seed = None
+
+    def _filter_out_backtracked(self, df: pd.DataFrame) -> pd.DataFrame:
+        """从 DataFrame 中剔除本轮已回溯移除的人员（按学号匹配）"""
+        if not self._backtracked_ids:
+            return df
+        if df.empty or '学号' not in df.columns:
+            return df
+        mask = ~df['学号'].astype(str).str.strip().isin(self._backtracked_ids)
+        return df[mask]
 
     def _find_person_in_selection(self, student_id: str) -> tuple:
         if self._last_selected_rows is None or self._last_selected_rows.empty:
@@ -887,13 +914,18 @@ class RandomSelectorUI:
         remaining = self._last_selected_rows.drop(idx)
         person_name = safe_val(person_row['姓名'])
 
+        # 将被回溯剔除的人员加入本轮排除集合（新一轮抽选时清空）
+        self._backtracked_ids.add(str(student_id).strip())
+
         if self._last_mode == "temporary":
             all_personnel = self.personnel_manager.get_all_personnel()
+            all_personnel = self._filter_out_backtracked(all_personnel)
             pool = all_personnel[~all_personnel.index.isin(remaining.index)]
         else:
             self.personnel_manager.update_selection_status([idx], selected=False)
             self._safe_save()
             unselected = self.personnel_manager.get_unselected_personnel()
+            unselected = self._filter_out_backtracked(unselected)
             pool = unselected[~unselected.index.isin(remaining.index)]
 
         # 排除被回溯的人员自身，防止"替换"回同一个人
@@ -927,6 +959,7 @@ class RandomSelectorUI:
             new_selection, title,
             saved_to_file=(self._last_mode == "mopping"),
             animate=False,
+            highlight_name=replacement_name,
         )
 
         self.result_area.controls.extend(self._build_backtrack_panel())
@@ -937,21 +970,28 @@ class RandomSelectorUI:
 
     # ==================== 结果显示 ====================
 
+    @staticmethod
+    def _fill_table_static(table: ft.DataTable, rows_data: list, start_index: int) -> str | None:
+        """同步填充表格行（无动画），返回最后一个人的姓名，供非动画场景使用"""
+        last_name = None
+        for i, (_, row) in enumerate(rows_data, start_index):
+            cells = make_row_cells(i, row)
+            color = COLOR_ROW_ALT if i % 2 == 0 else None
+            table.rows.append(ft.DataRow(cells=cells, color=color))
+            last_name = safe_val(row['姓名'])
+        return last_name
+
     def _animate_table_fill(
         self, table: ft.DataTable, rows_data: list, start_index: int,
         scroll_target: str | None, live_text: ft.Text | None,
         animate: bool = True,
     ):
         if not animate:
-            for i, (_, row) in enumerate(rows_data, start_index):
-                cells = make_row_cells(i, row)
-                color = COLOR_ROW_ALT if i % 2 == 0 else None
-                table.rows.append(ft.DataRow(cells=cells, color=color))
+            # 非动画路径：直接填充
+            last_name = self._fill_table_static(table, rows_data, start_index)
             table.update()
-            if rows_data and live_text is not None:
-                _, last_row = rows_data[-1]
-                name = safe_val(last_row['姓名'])
-                live_text.value = f"🎯 {name}"
+            if last_name is not None and live_text is not None:
+                live_text.value = f"🎯 {last_name}"
                 live_text.update()
             return
 
@@ -982,6 +1022,7 @@ class RandomSelectorUI:
     def display_selection_result(
         self, selected_rows: pd.DataFrame, title: str,
         saved_to_file: bool, animate: bool = True,
+        highlight_name: str | None = None,
     ):
         self.result_area.controls.clear()
         count = len(selected_rows)
@@ -1030,15 +1071,25 @@ class RandomSelectorUI:
         try:
             if count <= 2:
                 table = make_selection_table()
+                rows_data = list(selected_rows.iterrows())
+                # 非动画时先填充再渲染，避免空表闪烁或增量更新丢失
+                if not animate:
+                    self._fill_table_static(table, rows_data, 1)
+                    display_name = highlight_name if highlight_name else (
+                        safe_val(selected_rows.iloc[-1]['姓名']) if count > 0 else None
+                    )
+                    if display_name:
+                        live_name_text.value = f"🎯 {display_name}"
                 table_row = ft.Row([table], scroll=ft.ScrollMode.AUTO, key="sel_table")
                 result_cards.append(table_row)
                 self.result_area.controls.extend(result_cards)
                 self.result_area.page.update()
 
-                self._animate_table_fill(
-                    table, list(selected_rows.iterrows()), 1,
-                    "sel_table", live_name_text, animate=animate,
-                )
+                if animate:
+                    self._animate_table_fill(
+                        table, rows_data, 1,
+                        "sel_table", live_name_text, animate=True,
+                    )
             else:
                 mid = (count + 1) // 2
                 left_rows = list(selected_rows.iloc[:mid].iterrows())
@@ -1046,6 +1097,16 @@ class RandomSelectorUI:
 
                 left_table = make_selection_table()
                 right_table = make_selection_table()
+
+                # 非动画时先填充再渲染，避免空表闪烁或增量更新丢失
+                if not animate:
+                    self._fill_table_static(left_table, left_rows, 1)
+                    self._fill_table_static(right_table, right_rows, mid + 1)
+                    display_name = highlight_name if highlight_name else (
+                        safe_val(selected_rows.iloc[-1]['姓名']) if count > 0 else None
+                    )
+                    if display_name:
+                        live_name_text.value = f"🎯 {display_name}"
 
                 left_col = ft.Column(
                     [left_table], expand=True, scroll=ft.ScrollMode.AUTO, key="left_table"
@@ -1063,14 +1124,15 @@ class RandomSelectorUI:
                 self.result_area.controls.extend(result_cards)
                 self.result_area.page.update()
 
-                self._animate_table_fill(
-                    left_table, left_rows, 1,
-                    "left_table", live_name_text, animate=animate,
-                )
-                self._animate_table_fill(
-                    right_table, right_rows, mid + 1,
-                    "right_table", live_name_text, animate=animate,
-                )
+                if animate:
+                    self._animate_table_fill(
+                        left_table, left_rows, 1,
+                        "left_table", live_name_text, animate=True,
+                    )
+                    self._animate_table_fill(
+                        right_table, right_rows, mid + 1,
+                        "right_table", live_name_text, animate=True,
+                    )
         finally:
             if animate:
                 self._set_buttons_disabled(False)
