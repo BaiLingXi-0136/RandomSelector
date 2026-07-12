@@ -2,7 +2,7 @@
 
 # ==================== 应用元信息 ====================
 APP_TITLE = "随机点名系统"
-APP_VERSION = "4.4"
+APP_VERSION = "4.4.1"
 MUTEX_NAME = r"Local\RandomSelector_v4"
 
 # ==================== 数值限制 ====================
@@ -12,6 +12,7 @@ MIN_SELECTION_COUNT = 1
 MOPPING_COUNT = 3            # 拖地模式默认选择人数
 FILE_MONITOR_INTERVAL = 3    # 文件占用检测间隔（秒）
 ANIMATION_DELAY = 0.35       # 逐行动画延迟（秒）
+REFRESH_ANIMATION_DURATION = 0.8  # 刷新动画持续时间（秒）
 DEFAULT_SEED = 1589564
 
 # ==================== 颜色 ====================

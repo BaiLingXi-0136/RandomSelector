@@ -16,7 +16,7 @@ from constants import (
     FONT_SIZE_BODY, FONT_SIZE_HINT, FONT_SIZE_LIVE, FONT_SIZE_SECTION, FONT_SIZE_SMALL,
     FONT_SIZE_TITLE, LABEL_MODE_GROUP, LABEL_MODE_MOPPING, LABEL_MODE_TEMPORARY,
     MAX_SELECTION_COUNT, MIN_SELECTION_COUNT, MOPPING_COUNT,
-    BACKTRACK_INPUT_WIDTH, ANIMATION_DELAY, DEFAULT_SEED,
+    BACKTRACK_INPUT_WIDTH, ANIMATION_DELAY, REFRESH_ANIMATION_DURATION, DEFAULT_SEED,
     BTN_START, BTN_SHOW_ALL, BTN_SHOW_UNSELECTED, BTN_CLEAR, BTN_BACKTRACK,
     MENU_FILE, MENU_EDIT, MENU_VIEW, MENU_TOOLS, MENU_HELP,
     WARN_FILE_LOCKED, WARN_FILE_LOCKED_SELECTION,
@@ -115,6 +115,40 @@ class RandomSelectorUI:
         if self.status_text.page is not None:
             self.status_text.update()
 
+    def _on_refresh(self, e):
+        """刷新：重新加载数据并在输出区显示旋转圆圈动画"""
+        page = e.page
+
+        # 1. 在输出区展示大型旋转圆圈 + 刷新文字
+        self.result_area.controls.clear()
+        self.result_area.controls.append(
+            ft.Column(
+                [
+                    ft.ProgressRing(width=48, height=48, stroke_width=4),
+                    ft.Text("正在刷新…", size=FONT_SIZE_BODY, color=COLOR_HINT,
+                            weight=ft.FontWeight.BOLD),
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=16,
+            ),
+        )
+        self.result_area.update()
+
+        # 2. 停留片刻让用户看到刷新动画
+        page.update()
+        time.sleep(REFRESH_ANIMATION_DURATION)
+
+        # 3. 强制重新加载 Excel 数据
+        self.personnel_manager.load_data()
+
+        # 4. 清除动画，更新状态栏
+        self.result_area.controls.clear()
+        self.result_area.update()
+        self._refresh_status()
+
+        page.update()
+
     # ==================== 菜单栏 ====================
 
     def _build_menu_bar(self):
@@ -127,7 +161,6 @@ class RandomSelectorUI:
                         menu_item("打开数据文件...", "",
                                   icon=ft.Icon(ft.Icons.FOLDER_OPEN),
                                   on_click=self._on_open_file_click),
-                        ft.MenuItemButton(),
                         menu_item("退出", "",
                                   icon=ft.Icon(ft.Icons.EXIT_TO_APP),
                                   on_click=lambda e: e.page.window.close()),
@@ -153,7 +186,7 @@ class RandomSelectorUI:
                         ft.MenuItemButton(),
                         menu_item("刷新", "",
                                   icon=ft.Icon(ft.Icons.REFRESH),
-                                  on_click=lambda _: self._refresh_status()),
+                                  on_click=self._on_refresh),
                     ],
                 ),
                 ft.SubmenuButton(
@@ -162,11 +195,9 @@ class RandomSelectorUI:
                         menu_item("导出结果...", "",
                                   icon=ft.Icon(ft.Icons.SAVE_ALT),
                                   on_click=self._on_export_results),
-                        ft.MenuItemButton(),
                         menu_item("选项...", "",
                                   icon=ft.Icon(ft.Icons.SETTINGS),
                                   on_click=self._on_options_click),
-                        ft.MenuItemButton(),
                         menu_item("测试错误捕获", "",
                                   icon=ft.Icon(ft.Icons.BUG_REPORT),
                                   on_click=lambda _: (_ for _ in ()).throw(
@@ -180,7 +211,6 @@ class RandomSelectorUI:
                         menu_item("使用说明", "",
                                   icon=ft.Icon(ft.Icons.HELP_OUTLINE),
                                   on_click=on_menu_help),
-                        ft.MenuItemButton(),
                         menu_item("关于...", "",
                                   icon=ft.Icon(ft.Icons.INFO_OUTLINE),
                                   on_click=on_menu_about),

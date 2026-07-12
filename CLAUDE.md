@@ -86,8 +86,8 @@ Flet 将同步事件处理器（`on_click` 等）通过 `ThreadPoolExecutor` 执
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
-| `random_selector_ui.py` | ~1150 | 主界面类 `RandomSelectorUI`，包含所有 UI 构建和业务逻辑 |
-| `constants.py` | ~100 | 应用级常量：颜色、字体、标签、尺寸、限制值 |
+| `random_selector_ui.py` | ~1307 | 主界面类 `RandomSelectorUI`，包含所有 UI 构建和业务逻辑 |
+| `constants.py` | ~101 | 应用级常量：颜色、字体、标签、尺寸、限制值 |
 | `config.py` | ~90 | 路径解析、设置读写、首次运行初始化 |
 | `error_handler.py` | ~250 | 全局异常捕获 + 日志轮转 + 错误弹窗 |
 | `dialogs.py` | ~210 | AlertDialog 工厂：关于、帮助、选项（种子）、确认对话框 |
