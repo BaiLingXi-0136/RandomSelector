@@ -3,6 +3,7 @@
 集中管理所有 AlertDialog 的创建，保持 UI 层精简。
 """
 import flet as ft
+from pathlib import Path
 from typing import Callable
 
 from config import BASE_DIR, RESOURCE_DIR
@@ -82,6 +83,36 @@ def open_help_dialog(page: ft.Page):
 def on_menu_help(e):
     """菜单栏事件处理器：打开使用说明对话框"""
     open_help_dialog(e.page)
+
+
+# ==================== Markdown 文件查看器 ====================
+
+def show_md_viewer_dialog(page: ft.Page, file_path: Path):
+    """打开任意 Markdown 文件查看对话框"""
+    try:
+        md_text = file_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        md_text = f"无法读取文件：{file_path.name}"
+
+    dialog = ft.AlertDialog(
+        title=ft.Text(f"查看 - {file_path.name}"),
+        content=ft.Column(
+            [
+                ft.Markdown(
+                    md_text,
+                    selectable=True,
+                    extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+                ),
+            ],
+            scroll=ft.ScrollMode.AUTO,
+            width=700,
+            height=480,
+        ),
+        actions=[
+            ft.TextButton(BTN_CONFIRM, on_click=lambda _: page.close(dialog)),
+        ],
+    )
+    page.open(dialog)
 
 
 # ==================== 选项（种子）对话框 ====================

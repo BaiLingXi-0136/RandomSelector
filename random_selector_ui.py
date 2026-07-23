@@ -71,6 +71,7 @@ class RandomSelectorUI:
         self.status_text: ft.Text | None = None
         self.menu_bar: ft.MenuBar | None = None
         self.file_picker: ft.FilePicker | None = None
+        self.md_file_picker: ft.FilePicker | None = None
 
         # 种子设置
         settings = load_settings()
@@ -211,6 +212,9 @@ class RandomSelectorUI:
                         menu_item("使用说明", "",
                                   icon=ft.Icon(ft.Icons.HELP_OUTLINE),
                                   on_click=on_menu_help),
+                        menu_item("查看 Markdown 文件...", "",
+                                  icon=ft.Icon(ft.Icons.ARTICLE),
+                                  on_click=self._on_open_md_file_click),
                         menu_item("关于...", "",
                                   icon=ft.Icon(ft.Icons.INFO_OUTLINE),
                                   on_click=on_menu_about),
@@ -227,6 +231,14 @@ class RandomSelectorUI:
             self.file_picker.pick_files(
                 allowed_extensions=["xlsx"],
                 dialog_title="选择人员数据文件",
+                file_type=ft.FilePickerFileType.CUSTOM,
+            )
+
+    def _on_open_md_file_click(self, _e):
+        if self.md_file_picker is not None:
+            self.md_file_picker.pick_files(
+                allowed_extensions=["md"],
+                dialog_title="选择 Markdown 文件",
                 file_type=ft.FilePickerFileType.CUSTOM,
             )
 
@@ -368,11 +380,18 @@ class RandomSelectorUI:
         self._clear_selection_context()
         self._refresh_status()
 
+    def _on_md_file_picked(self, e: ft.FilePickerResultEvent):
+        if e.files is None or len(e.files) == 0:
+            return
+        from dialogs import show_md_viewer_dialog
+        show_md_viewer_dialog(e.page, Path(e.files[0].path))
+
     # ==================== 主界面构建 ====================
 
     def build_main_view(self):
         self.result_area = ft.Column([])
         self.file_picker = ft.FilePicker(on_result=self._on_file_picked)
+        self.md_file_picker = ft.FilePicker(on_result=self._on_md_file_picked)
         self._build_menu_bar()
 
         # 模式选择
