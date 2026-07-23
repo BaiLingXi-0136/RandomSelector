@@ -81,6 +81,7 @@ MENU_EDIT = "编辑"
 MENU_VIEW = "视图"
 MENU_TOOLS = "工具"
 MENU_HELP = "帮助"
+MENU_CHECK_UPDATE = "检查更新"
 
 # ==================== 提示/警告文本 ====================
 WARN_FILE_LOCKED = (
@@ -96,6 +97,17 @@ WARN_ALL_SELECTED = "所有人员都已被选择过！"
 HINT_TEMP_NOT_SAVED = "提示：此为临时选择，未保存到原文件"
 HINT_BACKTRACK_USAGE = "如选中人员请假或有特殊情况，可输入其学号进行回溯替换"
 HINT_SEED = "💡 相同种子 + 相同数据文件 = 相同的抽选结果"
+
+# ==================== 更新检查 ====================
+UPDATE_TITLE_AVAILABLE = "发现新版本"
+UPDATE_TITLE_LATEST = "已是最新版本"
+UPDATE_TITLE_FAILED = "检查更新失败"
+UPDATE_MSG_AVAILABLE = "发现新版本 v{version}，请前往 GitHub 下载最新版本。\n\n当前版本：v{current}"
+UPDATE_MSG_LATEST = "当前已是最新版本 v{version}。"
+UPDATE_MSG_NETWORK_ERROR = "无法连接到更新服务器，请检查网络连接后重试。\n\n如多次失败，可尝试使用网络加速器。"
+UPDATE_MSG_PARSE_ERROR = "无法解析远程版本信息，请稍后重试。"
+UPDATE_OPTION_AUTO_CHECK = "启动时自动检查更新"
+GITHUB_ISSUES_URL = "https://github.com/BaiLingXi-0136/RandomSelector/issues"
 
 # ==================== 测试/调试 ====================
 TEST_ERROR_MESSAGE = "这是一条测试异常，用于验证错误捕获机制是否正常工作。"

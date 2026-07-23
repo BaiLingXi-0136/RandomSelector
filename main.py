@@ -3,7 +3,7 @@ import sys
 import ctypes
 import flet as ft
 from config import bootstrap, RESOURCE_DIR, load_settings, save_settings
-from constants import APP_TITLE, FONT_FAMILY, MUTEX_NAME, WINDOW_WIDTH, WINDOW_HEIGHT
+from constants import APP_TITLE, APP_VERSION, FONT_FAMILY, MUTEX_NAME, WINDOW_WIDTH, WINDOW_HEIGHT
 from error_handler import setup_error_handler
 from random_selector_ui import RandomSelectorUI
 from dialogs import open_help_dialog
@@ -34,7 +34,7 @@ def main(page: ft.Page):
     bootstrap()
     setup_error_handler(page)
 
-    page.title = APP_TITLE
+    page.title = f"{APP_TITLE} v{APP_VERSION}"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.theme = ft.Theme(font_family=FONT_FAMILY)
     page.window.icon = str(RESOURCE_DIR / "config" / "icon.ico")
@@ -109,6 +109,14 @@ def main(page: ft.Page):
     if settings.get("first_run", True):
         save_settings({"first_run": False})
         open_help_dialog(page)
+
+    # 启动时自动检查更新（后台线程，已是最新版本时静默不弹窗）
+    if settings.get("auto_check_update", True):
+        from update_check import check_for_updates_async
+        check_for_updates_async(
+            page, silent_on_latest=True,
+            on_result=app_ui._on_update_check_result,
+        )
 
     # 启动文件占用实时监测
     app_ui.setup_file_monitor()

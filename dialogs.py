@@ -9,7 +9,8 @@ from typing import Callable
 from config import BASE_DIR, RESOURCE_DIR
 from constants import (
     BTN_CANCEL, BTN_CONFIRM, COLOR_HINT, COLOR_SUBTLE,
-    FONT_SIZE_HINT, HINT_SEED, SEED_INPUT_WIDTH,
+    FONT_SIZE_HINT, GITHUB_ISSUES_URL, HINT_SEED, SEED_INPUT_WIDTH,
+    UPDATE_OPTION_AUTO_CHECK,
 )
 
 
@@ -74,6 +75,7 @@ def open_help_dialog(page: ft.Page):
             height=450,
         ),
         actions=[
+            ft.TextButton("用户反馈", on_click=lambda _: page.launch_url(GITHUB_ISSUES_URL)),
             ft.TextButton(BTN_CONFIRM, on_click=lambda _: page.close(dialog)),
         ],
     )
@@ -121,9 +123,15 @@ def show_options_dialog(
     page: ft.Page,
     seed_enabled: bool,
     seed_value: int,
-    on_save: Callable[[bool, int], None],
+    auto_check_update: bool,
+    on_save: Callable[[bool, int, bool], None],
 ):
     """打开选项配置对话框，用户确认后通过 on_save 回调保存"""
+
+    auto_check_checkbox = ft.Checkbox(
+        label=UPDATE_OPTION_AUTO_CHECK,
+        value=auto_check_update,
+    )
 
     seed_checkbox = ft.Checkbox(
         label="启用固定种子 (Seed)",
@@ -155,7 +163,7 @@ def show_options_dialog(
             return
 
         page.close(dialog)
-        on_save(seed_checkbox.value, val)
+        on_save(seed_checkbox.value, val, auto_check_checkbox.value)
 
     def on_cancel(_e):
         page.close(dialog)
@@ -164,6 +172,8 @@ def show_options_dialog(
         title=ft.Text("选项"),
         content=ft.Column(
             [
+                auto_check_checkbox,
+                ft.Divider(height=1, color=COLOR_HINT),
                 seed_checkbox,
                 ft.Row([ft.Text("种子值："), seed_input]),
                 ft.Text(

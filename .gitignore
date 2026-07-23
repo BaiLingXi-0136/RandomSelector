@@ -5,3 +5,4 @@ dist/
 .claude/
 *.spec
 config/version_info.txt
+push.sh

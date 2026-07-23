@@ -1,5 +1,6 @@
 {
   "first_run": true,
   "seed_enabled": false,
-  "seed_value": 1589564
+  "seed_value": 1589564,
+  "auto_check_update": true
 }

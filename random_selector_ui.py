@@ -8,7 +8,7 @@ from pathlib import Path
 
 from config import DATA_DIR, load_settings, save_settings
 from constants import (
-    APP_TITLE, BUTTON_WIDTH, COLOR_DANGER, COLOR_PRIMARY, COLOR_WARNING,
+    APP_TITLE, APP_VERSION, BUTTON_WIDTH, COLOR_DANGER, COLOR_PRIMARY, COLOR_WARNING,
     COLOR_BORDER, COLOR_ERROR_BG, COLOR_HINT, COLOR_INFO_BG, COLOR_LIGHT_BG,
     COLOR_NEUTRAL_BG, COLOR_ROW_ALT, COLOR_ROW_HIGHLIGHT, COLOR_SUCCESS_BG,
     COLOR_SUCCESS_TEXT,
@@ -18,7 +18,7 @@ from constants import (
     MAX_SELECTION_COUNT, MIN_SELECTION_COUNT, MOPPING_COUNT,
     BACKTRACK_INPUT_WIDTH, ANIMATION_DELAY, REFRESH_ANIMATION_DURATION, DEFAULT_SEED,
     BTN_START, BTN_SHOW_ALL, BTN_SHOW_UNSELECTED, BTN_CLEAR, BTN_BACKTRACK,
-    MENU_FILE, MENU_EDIT, MENU_VIEW, MENU_TOOLS, MENU_HELP,
+    MENU_FILE, MENU_EDIT, MENU_VIEW, MENU_TOOLS, MENU_HELP, MENU_CHECK_UPDATE,
     WARN_FILE_LOCKED, WARN_FILE_LOCKED_SELECTION,
     WARN_LOAD_FAILED, WARN_EMPTY_LIST, WARN_ALL_SELECTED, WARN_NO_EXPORT_DATA,
     HINT_TEMP_NOT_SAVED, HINT_BACKTRACK_USAGE, TEST_ERROR_MESSAGE,
@@ -27,6 +27,7 @@ from dialogs import (
     on_menu_about, on_menu_help,
     show_options_dialog, show_clear_records_confirm, show_mopping_redo_confirm,
 )
+from update_check import check_for_updates
 from file_monitor import FileLockMonitor
 from personnel_manager import PersonnelManager
 from ui_helpers import (
@@ -69,6 +70,7 @@ class RandomSelectorUI:
 
         # 状态与菜单
         self.status_text: ft.Text | None = None
+        self._update_status_text: ft.Text | None = None
         self.menu_bar: ft.MenuBar | None = None
         self.file_picker: ft.FilePicker | None = None
         self.md_file_picker: ft.FilePicker | None = None
@@ -77,6 +79,7 @@ class RandomSelectorUI:
         settings = load_settings()
         self._seed_enabled: bool = settings.get("seed_enabled", False)
         self._seed_value: int = settings.get("seed_value", DEFAULT_SEED)
+        self._auto_check_update: bool = settings.get("auto_check_update", True)
         self._effective_seed: int | None = None   # 本次抽选实际使用的种子
 
     # ==================== 辅助属性 ====================
@@ -196,6 +199,9 @@ class RandomSelectorUI:
                         menu_item("导出结果...", "",
                                   icon=ft.Icon(ft.Icons.SAVE_ALT),
                                   on_click=self._on_export_results),
+                        menu_item(MENU_CHECK_UPDATE, "",
+                                  icon=ft.Icon(ft.Icons.UPDATE),
+                                  on_click=self._on_check_update),
                         menu_item("选项...", "",
                                   icon=ft.Icon(ft.Icons.SETTINGS),
                                   on_click=self._on_options_click),
@@ -260,16 +266,41 @@ class RandomSelectorUI:
             page=e.page,
             seed_enabled=self._seed_enabled,
             seed_value=self._seed_value,
-            on_save=self._save_seed_settings,
+            auto_check_update=self._auto_check_update,
+            on_save=self._save_settings,
         )
 
-    def _save_seed_settings(self, enabled: bool, value: int):
+    def _save_settings(self, enabled: bool, value: int, auto_check: bool):
         self._seed_enabled = enabled
         self._seed_value = value
+        self._auto_check_update = auto_check
         save_settings({
             "seed_enabled": enabled,
             "seed_value": value,
+            "auto_check_update": auto_check,
         })
+
+    def _on_check_update(self, e):
+        """菜单处理：手动检查更新"""
+        check_for_updates(
+            e.page, silent_on_latest=False,
+            on_result=self._on_update_check_result,
+        )
+
+    def _on_update_check_result(self, status: str, version: str | None):
+        """更新检查结果回调：更新窗口标题栏状态文字"""
+        if self._update_status_text is None:
+            return
+        if status == "latest":
+            self._update_status_text.value = "✓ 已是最新版本"
+            self._update_status_text.color = COLOR_SUCCESS_TEXT
+        elif status == "update_available":
+            self._update_status_text.value = f"⬆ 新版本 v{version} 可用"
+            self._update_status_text.color = COLOR_WARNING
+        elif status == "error":
+            self._update_status_text.value = "⚠ 检查更新失败"
+            self._update_status_text.color = COLOR_DANGER
+        self._update_status_text.update()
 
     # ==================== 导出结果 ====================
 
@@ -487,9 +518,25 @@ class RandomSelectorUI:
         # 状态文字
         self.status_text = ft.Text("", size=FONT_SIZE_BODY, color=COLOR_HINT, italic=True)
 
+        # 标题栏：程序名 + 版本号（左），更新状态（右）
+        self._update_status_text = ft.Text(
+            "", size=FONT_SIZE_HINT, color=COLOR_SUBTLE, italic=True,
+        )
+        title_row = ft.Row(
+            [
+                ft.Text(
+                    f"{APP_TITLE} v{APP_VERSION}",
+                    size=FONT_SIZE_TITLE, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Container(expand=True),
+                self._update_status_text,
+            ],
+            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+        )
+
         # 主布局
         self.main_column = ft.Column([
-            ft.Text(APP_TITLE, size=FONT_SIZE_TITLE, weight=ft.FontWeight.BOLD),
+            title_row,
             self.menu_bar,
             self.status_text,
             self._file_lock_warning,
