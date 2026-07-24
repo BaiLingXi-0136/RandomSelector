@@ -24,7 +24,7 @@ from constants import (
     UPDATE_MSG_AVAILABLE, UPDATE_MSG_LATEST,
     UPDATE_MSG_NETWORK_ERROR, UPDATE_MSG_PARSE_ERROR,
     COLOR_ERROR_BG, COLOR_INFO_BG, COLOR_SUCCESS_BG,
-    COLOR_SUBTLE,
+    COLOR_SUBTLE, GITHUB_RELEASES_URL,
 )
 
 # 回调类型：on_result(status, version)
@@ -188,7 +188,11 @@ def _show_loading_dialog(page: ft.Page) -> ft.AlertDialog:
 
 
 def _show_update_available_dialog(page: ft.Page, remote_version: str):
-    """弹出"发现新版本"对话框"""
+    """弹出"发现新版本"对话框，引导用户前往 GitHub Releases 下载"""
+    def _go_to_releases(_):
+        page.launch_url(GITHUB_RELEASES_URL)
+        page.close(dialog)
+
     dialog = ft.AlertDialog(
         title=ft.Text(UPDATE_TITLE_AVAILABLE),
         content=ft.Text(
@@ -199,7 +203,8 @@ def _show_update_available_dialog(page: ft.Page, remote_version: str):
         content_padding=ft.padding.symmetric(horizontal=24, vertical=20),
         bgcolor=COLOR_SUCCESS_BG,
         actions=[
-            ft.TextButton(BTN_CONFIRM, on_click=lambda _: page.close(dialog)),
+            ft.TextButton("前往下载", on_click=_go_to_releases),
+            ft.TextButton("关闭", on_click=lambda _: page.close(dialog)),
         ],
     )
     page.open(dialog)
