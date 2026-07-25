@@ -2,8 +2,12 @@
 
 ## v4.4.3（2026-07-25）
 
+- 集成 Inno Setup 安装包生成，`python build.py` 打包后自动生成 `RandomSelector_v4.4.3_Setup.exe`
+- `os.system()` 替换为 `subprocess.run()`，消除 IDE 安全警告
+- 新增 `--no-installer` 参数，可跳过安装包生成步骤
 - 新增引导下载链接，发现新版本时可跳转至 GitHub Releases 页面
 - "查看人员"按钮根据当前模式（临时/拖地）显示不同数据区域
+- 更新 README.md 快速开始指南，新增 Releases 下载方式
 - 本文件重命名为 `UPDATE.md`
 
 ## v4.4.2（2026-07-23）
