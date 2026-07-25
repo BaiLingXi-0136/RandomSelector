@@ -148,7 +148,7 @@ git pull origin main
 ```
 config/
 ├── ABOUT.md              # 关于信息
-├── update.md              # 版本更新记录
+├── UPDATE.md              # 版本更新记录
 ├── settings.json          # 用户配置
 ├── icon.ico               # 程序图标
 └── data/
