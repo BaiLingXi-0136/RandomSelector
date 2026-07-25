@@ -7,10 +7,12 @@ DNS 劫持应对：与 update_check.py 相同，当检测到 GitHub 域名被 ho
 指向 127.0.0.1 时，自动回退到真实 IP 直连。
 """
 import json
+import hashlib
 import os
 import socket
 import ssl
 import threading
+import time
 import http.client
 import urllib.request
 import urllib.error
@@ -48,7 +50,8 @@ _FALLBACK_IPS = [
 _SETUP_FILENAME_PATTERN = "RandomSelector_v{version}_Setup.exe"
 
 # 回调类型
-ProgressCallback = Callable[[int, int, str], None]  # (bytes_done, total, filename)
+# (bytes_done, total, filename, speed_bytes_per_sec, eta_seconds)
+ProgressCallback = Callable[[int, int, str, float, float], None]
 CompleteCallback = Callable[[str, str], None]       # (file_path, filename)
 ErrorCallback = Callable[[str], None]               # (error_message)
 
@@ -221,31 +224,63 @@ def resolve_download_url(version: str) -> dict:
 def _download_via_urllib(
     url: str, dest_path: Path, total_size: int,
     progress_callback: ProgressCallback, cancel_flag: Callable[[], bool],
-    filename: str,
+    filename: str, resume_from: int = 0,
+    pause_event: threading.Event | None = None,
 ) -> bool:
-    """标准 urllib 流式下载（DNS 正常时使用）。"""
+    """标准 urllib 流式下载（DNS 正常时使用）。
+
+    resume_from > 0 时发送 Range 请求实现断点续传。
+    pause_event 用于暂停/恢复下载，wait() 阻塞直到恢复。
+    """
     try:
         req = urllib.request.Request(url)
         req.add_header("User-Agent", f"RandomSelector/{APP_VERSION}")
-        with urllib.request.urlopen(req, timeout=_REQUEST_TIMEOUT) as resp:
-            # 如果 API 返回了大小就用 API 的，否则用响应头的 Content-Length
-            effective_size = total_size
-            if effective_size <= 0:
-                cl = resp.headers.get("Content-Length")
-                if cl:
-                    effective_size = int(cl)
+        if resume_from > 0:
+            req.add_header("Range", f"bytes={resume_from}-")
 
-            downloaded = 0
-            with open(dest_path, "wb") as f:
+        with urllib.request.urlopen(req, timeout=_REQUEST_TIMEOUT) as resp:
+            is_partial = resp.status == 206
+
+            if is_partial:
+                # 服务器支持断点续传 → 追加模式
+                effective_size = total_size
+                if effective_size <= 0:
+                    cr = resp.headers.get("Content-Range", "")
+                    if "/" in cr:
+                        effective_size = int(cr.split("/")[-1])
+                mode = "ab"
+                total_done = resume_from
+            else:
+                # 服务器返回完整文件 → 覆盖模式
+                effective_size = total_size
+                if effective_size <= 0:
+                    cl = resp.headers.get("Content-Length")
+                    if cl:
+                        effective_size = int(cl)
+                mode = "wb"
+                total_done = 0
+
+            session_done = 0
+            start_time = time.time()
+            with open(dest_path, mode) as f:
                 while True:
+                    # Pause check: block until resumed, periodically check cancel
+                    if pause_event is not None:
+                        while not pause_event.wait(timeout=0.5):
+                            if cancel_flag():
+                                return False
                     if cancel_flag():
                         return False
                     chunk = resp.read(_CHUNK_SIZE)
                     if not chunk:
                         break
                     f.write(chunk)
-                    downloaded += len(chunk)
-                    progress_callback(downloaded, effective_size, filename)
+                    session_done += len(chunk)
+                    total_done += len(chunk)
+                    elapsed = time.time() - start_time
+                    speed = session_done / elapsed if elapsed > 0 else 0.0
+                    eta = (effective_size - total_done) / speed if speed > 0 and effective_size > 0 else 0.0
+                    progress_callback(total_done, effective_size, filename, speed, eta)
         return True
     except (
         urllib.error.URLError,
@@ -259,11 +294,14 @@ def _download_via_urllib(
 def _download_via_ip_fallback(
     url: str, dest_path: Path, total_size: int,
     progress_callback: ProgressCallback, cancel_flag: Callable[[], bool],
-    filename: str,
+    filename: str, resume_from: int = 0,
+    pause_event: threading.Event | None = None,
 ) -> bool:
     """通过 IP 直连流式下载（DNS 被劫持时使用）。
 
     从 URL 中解析出路径，通过 http.client 直连 IP 进行 HTTPS 请求。
+    resume_from > 0 时发送 Range 请求实现断点续传。
+    pause_event 用于暂停/恢复下载，wait() 阻塞直到恢复。
     """
     # 从 URL 中解析 path: https://github.com/owner/repo/releases/download/vX/file.exe
     path_start = url.find("/", 8)  # skip "https://"
@@ -278,15 +316,19 @@ def _download_via_ip_fallback(
     # 判断重定向目标域名（可能是 github.com 或 objects.githubusercontent.com）
     host = _GITHUB_HOST
 
+    headers = {
+        "Host": host,
+        "User-Agent": f"RandomSelector/{APP_VERSION}",
+    }
+    if resume_from > 0:
+        headers["Range"] = f"bytes={resume_from}-"
+
     for ip in _FALLBACK_IPS:
         try:
             conn = http.client.HTTPSConnection(
                 ip, timeout=_REQUEST_TIMEOUT, context=ctx,
             )
-            conn.request("GET", request_path, headers={
-                "Host": host,
-                "User-Agent": f"RandomSelector/{APP_VERSION}",
-            })
+            conn.request("GET", request_path, headers=headers)
             resp = conn.getresponse()
 
             # 处理重定向（GitHub Releases 通常会 302 到 S3）
@@ -294,22 +336,43 @@ def _download_via_ip_fallback(
                 location = resp.headers.get("Location", "")
                 conn.close()
                 if location:
-                    # 递归跟随重定向
+                    # 递归跟随重定向，透传 pause_event
                     return _download_via_urllib(
                         location, dest_path, total_size,
                         progress_callback, cancel_flag, filename,
+                        resume_from, pause_event,
                     )
                 continue
 
-            effective_size = total_size
-            if effective_size <= 0:
-                cl = resp.headers.get("Content-Length")
-                if cl:
-                    effective_size = int(cl)
+            is_partial = resp.status == 206
 
-            downloaded = 0
-            with open(dest_path, "wb") as f:
+            if is_partial:
+                effective_size = total_size
+                if effective_size <= 0:
+                    cr = resp.headers.get("Content-Range", "")
+                    if "/" in cr:
+                        effective_size = int(cr.split("/")[-1])
+                mode = "ab"
+                total_done = resume_from
+            else:
+                effective_size = total_size
+                if effective_size <= 0:
+                    cl = resp.headers.get("Content-Length")
+                    if cl:
+                        effective_size = int(cl)
+                mode = "wb"
+                total_done = 0
+
+            session_done = 0
+            start_time = time.time()
+            with open(dest_path, mode) as f:
                 while True:
+                    # Pause check: block until resumed, periodically check cancel
+                    if pause_event is not None:
+                        while not pause_event.wait(timeout=0.5):
+                            if cancel_flag():
+                                conn.close()
+                                return False
                     if cancel_flag():
                         conn.close()
                         return False
@@ -317,8 +380,12 @@ def _download_via_ip_fallback(
                     if not chunk:
                         break
                     f.write(chunk)
-                    downloaded += len(chunk)
-                    progress_callback(downloaded, effective_size, filename)
+                    session_done += len(chunk)
+                    total_done += len(chunk)
+                    elapsed = time.time() - start_time
+                    speed = session_done / elapsed if elapsed > 0 else 0.0
+                    eta = (effective_size - total_done) / speed if speed > 0 and effective_size > 0 else 0.0
+                    progress_callback(total_done, effective_size, filename, speed, eta)
 
             conn.close()
             return True
@@ -331,9 +398,14 @@ def _download_via_ip_fallback(
 def _perform_download(
     download_url: str, dest_path: Path, total_size: int,
     progress_callback: ProgressCallback, cancel_flag: Callable[[], bool],
-    filename: str,
+    filename: str, resume_from: int = 0,
+    pause_event: threading.Event | None = None,
 ) -> bool:
-    """执行下载：DNS 正常走 urllib，被劫持走 IP 回退。"""
+    """执行下载：DNS 正常走 urllib，被劫持走 IP 回退。
+
+    resume_from > 0 时启用断点续传（HTTP Range 请求）。
+    pause_event 用于暂停/恢复下载。
+    """
     # 判断 URL 对应的 host
     if "objects.githubusercontent.com" in download_url:
         host = "objects.githubusercontent.com"
@@ -345,12 +417,14 @@ def _perform_download(
     if _check_dns_poisoning(host):
         return _download_via_ip_fallback(
             download_url, dest_path, total_size,
-            progress_callback, cancel_flag, filename,
+            progress_callback, cancel_flag, filename, resume_from,
+            pause_event,
         )
 
     success = _download_via_urllib(
         download_url, dest_path, total_size,
-        progress_callback, cancel_flag, filename,
+        progress_callback, cancel_flag, filename, resume_from,
+        pause_event,
     )
     if success:
         return True
@@ -358,7 +432,8 @@ def _perform_download(
     # 标准方式失败，尝试 IP 回退
     return _download_via_ip_fallback(
         download_url, dest_path, total_size,
-        progress_callback, cancel_flag, filename,
+        progress_callback, cancel_flag, filename, resume_from,
+        pause_event,
     )
 
 
@@ -377,31 +452,66 @@ def _get_downloads_folder() -> Path:
     return downloads if downloads.exists() else home
 
 
-def _unique_dest_path(dest_dir: Path, filename: str) -> Path:
-    """生成唯一的目标文件路径，若文件已存在则追加数字后缀。"""
-    dest = dest_dir / filename
-    if not dest.exists():
-        return dest
+def _compute_sha256(file_path: Path) -> str:
+    """计算文件的 SHA-256 哈希值。"""
+    sha = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        while True:
+            chunk = f.read(65536)
+            if not chunk:
+                break
+            sha.update(chunk)
+    return sha.hexdigest()
 
-    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
-    ext = "." + filename.rsplit(".", 1)[1] if "." in filename else ""
-    counter = 1
-    while True:
-        dest = dest_dir / f"{stem} ({counter}){ext}"
-        if not dest.exists():
-            return dest
-        counter += 1
+
+_MIN_INSTALLER_SIZE = 1_048_576  # 安装包至少 1MB，低于此值视为无效
+
+
+def _check_existing_file(dest_path: Path, expected_size: int) -> bool:
+    """检查已存在文件是否与预期安装包匹配。
+
+    通过文件大小比对判断。若 expected_size 为 0（未知），
+    则返回 False 触发重新下载以确保安全。
+    """
+    if not dest_path.exists():
+        return False
+    if expected_size <= 0:
+        # 无法确定远程大小，保守起见重新下载
+        return False
+    actual_size = dest_path.stat().st_size
+    return actual_size == expected_size
+
+
+def _verify_downloaded_file(file_path: Path, expected_size: int) -> bool:
+    """验证下载完成的文件是否有效。
+
+    1. 已知预期大小时：比对实际大小
+    2. 未知大小时：检查是否 >= 最小安装包体积（1MB），
+       低于此值极可能是网络拦截页面
+    """
+    try:
+        actual_size = file_path.stat().st_size
+    except OSError:
+        return False
+
+    if expected_size > 0:
+        return actual_size == expected_size
+    else:
+        return actual_size >= _MIN_INSTALLER_SIZE
 
 
 class DownloadManager:
     """后台下载管理器。
 
     在后台线程中执行下载，通过回调通知进度 / 完成 / 错误。
-    支持取消下载（线程安全）。
+    支持暂停、恢复和取消下载（所有操作线程安全）。
     """
 
     def __init__(self):
         self._cancel_flag = False
+        self._pause_flag = False
+        self._pause_event = threading.Event()
+        self._pause_event.set()  # 初始状态：非暂停
         self._thread: threading.Thread | None = None
 
     def start_download(
@@ -428,6 +538,8 @@ class DownloadManager:
             dest_dir = _get_downloads_folder()
 
         self._cancel_flag = False
+        self._pause_flag = False
+        self._pause_event.set()
 
         def _run():
             try:
@@ -441,27 +553,50 @@ class DownloadManager:
                     on_error(DOWNLOAD_ERROR_URL_RESOLVE)
                     return
 
-                # 2. 确定目标路径
-                dest_path = _unique_dest_path(dest_dir, filename)
+                # 2. 确定目标路径，检查是否已有相同文件或部分下载
+                dest_path = dest_dir / filename
 
-                # 3. 下载
+                if _check_existing_file(dest_path, total_size):
+                    # 文件已存在且大小匹配，无需重复下载
+                    on_complete(str(dest_path), filename)
+                    return
+
+                # 3. 检测部分下载，支持断点续传
+                resume_from = 0
+                if dest_path.exists():
+                    existing_size = dest_path.stat().st_size
+                    if total_size > 0 and existing_size < total_size:
+                        resume_from = existing_size  # 部分文件，续传
+                    elif total_size <= 0:
+                        # 未知总大小，无法判断是否完整，删除重新下载
+                        _safe_remove(dest_path)
+                    else:
+                        # 文件大小 >= 预期大小（异常），删除重新下载
+                        _safe_remove(dest_path)
+
+                # 4. 下载（支持断点续传、暂停/恢复）
                 ok = _perform_download(
                     download_url, dest_path, total_size,
                     on_progress,
                     lambda: self._cancel_flag,
-                    filename,
+                    filename, resume_from,
+                    self._pause_event,
                 )
 
                 if ok:
+                    # 验证下载完成的文件完整性（防止网络返回短响应/拦截页面）
+                    if not _verify_downloaded_file(dest_path, total_size):
+                        _safe_remove(dest_path)
+                        on_error(DOWNLOAD_ERROR_NETWORK)
+                        return
                     on_complete(str(dest_path), filename)
                 else:
-                    # 取消？
                     if self._cancel_flag:
-                        # 删除部分下载的文件
+                        # 用户主动取消：删除部分文件
                         _safe_remove(dest_path)
                         on_error(DOWNLOAD_STATUS_CANCELLED)
                     else:
-                        _safe_remove(dest_path)
+                        # 网络错误：保留部分文件，下次可续传
                         on_error(DOWNLOAD_ERROR_NETWORK)
 
             except OSError as e:
@@ -479,9 +614,30 @@ class DownloadManager:
     def cancel_download(self):
         """取消正在进行的下载（线程安全）。"""
         self._cancel_flag = True
+        # 如果处于暂停状态，先恢复以便取消能及时生效
+        self._pause_flag = False
+        self._pause_event.set()
+
+    def pause_download(self):
+        """暂停正在进行的下载（线程安全）。"""
+        self._pause_flag = True
+        self._pause_event.clear()
+
+    def resume_download(self):
+        """恢复暂停的下载（线程安全）。"""
+        self._pause_flag = False
+        self._pause_event.set()
+
+    def is_paused(self) -> bool:
+        """检查下载是否处于暂停状态。"""
+        return self._is_active() and self._pause_flag
 
     def is_downloading(self) -> bool:
         """检查是否正在下载中。"""
+        return self._is_active() and not self._pause_flag
+
+    def _is_active(self) -> bool:
+        """检查下载线程是否存活。"""
         return self._thread is not None and self._thread.is_alive()
 
 

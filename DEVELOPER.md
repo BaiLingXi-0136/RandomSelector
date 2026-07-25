@@ -23,7 +23,7 @@
 | 属性     | 说明                                                  |
 |--------|-----------------------------------------------------|
 | 项目名称   | 随机点名系统 (RandomSelector)                             |
-| 当前版本   | `4.4.1`（定义于 `constants.py:5`）                       |
+| 当前版本   | `4.5.0`（定义于 `constants.py:5`）                       |
 | 技术栈    | Python 3.8+ / Flet (Flutter) / pandas / PyInstaller |
 | 目标平台   | Windows 桌面                                          |
 | GUI 框架 | Flet ≥ 0.21.0（基于 Flutter 的 Python 绑定）               |
@@ -37,12 +37,14 @@ version4.0/
 ├── main.py                   # 入口：单实例互斥体 → Flet app 启动
 ├── config.py                 # 路径抽象层：BASE_DIR / RESOURCE_DIR 双轨制
 ├── constants.py              # 所有常量：颜色、字体、尺寸、标签、限制值
-├── random_selector_ui.py     # 主界面 RandomSelectorUI（~1307 行），UI + 业务逻辑
+├── random_selector_ui.py     # 主界面 RandomSelectorUI（~1557 行），UI + 业务逻辑
 ├── error_handler.py          # 全局异常捕获：monkey-patch + excepthook 兜底
 ├── dialogs.py                # AlertDialog 工厂函数（关于、帮助、选项、确认）
 ├── ui_helpers.py             # DataTable / 菜单项 / 分栏表格构建器
 ├── file_monitor.py           # FileLockMonitor：后台线程轮询文件可写性
 ├── personnel_manager.py      # PersonnelManager：pandas Excel 读写 + 选中状态 CRUD
+├── update_check.py           # GitHub 版本检测：纯标准库 + DNS 劫持回退（~145 行）
+├── download_manager.py       # 后台下载管理器：暂停/续传/断点恢复/文件验证（~650 行）
 ├── build.py                  # PyInstaller 打包脚本（版本号自动从 constants 读取）
 ├── README.md                 # 用户手册
 ├── CLAUDE.md                 # AI 编码助手指令（非人类开发者文档）
@@ -75,8 +77,12 @@ version4.0/
 │ 业务/数据层   │  基础设施层                │
 │ ├── personnel │  ├── config.py    路径管理 │
 │     _manager  │  ├── constants.py 常量池  │
-│ └── file      │  ├── error_handler.py     │
-│     _monitor  │  └── build.py    打包脚本  │
+│ ├── file      │  ├── error_handler.py     │
+│     _monitor  │  ├── update_check.py     │
+│ ├── download  │  │    版本检测             │
+│     _manager  │  └── build.py    打包脚本  │
+│ ├── update    │                          │
+│     _check    │                          │
 └──────────────┴──────────────────────────┘
 ```
 
@@ -331,6 +337,58 @@ python build.py --clean-only # 仅清理
 2. `clean()` — 删除 `build/`、`dist/`、`*.spec`、`version_info.txt`
 3. `build()` — 调用 PyInstaller，`--windowed` 模式
 4. 复制 `README.md` 到 `dist/RandomSelector/`
+
+### 4.10 `update_check.py` — 版本更新检测
+
+```python
+class UpdateChecker:
+    """GitHub 版本检测器，纯标准库实现。"""
+
+    def check_for_update() -> tuple[bool, str | None, str | None]
+        # 返回 (has_update, latest_version, download_url)
+        # 无更新: (False, None, None)
+        # 有更新: (True, "v4.5.0", "https://...")
+    
+    def get_latest_version() -> str | None
+        # 从 GitHub API 获取最新版本号（ETag 缓存减少 API 调用）
+    
+    def get_download_url(version: str) -> str | None
+        # 根据版本号从 GitHub Releases 获取安装包下载地址
+```
+
+**网络架构**：
+- 版本检查：`http.client` → `api.github.com` → 解析 JSON
+- DNS 劫持回退：检测 hosts 文件 → 自动切换到 GitHub IP 直连（`_FALLBACK_IPS`）
+- 超时设置：`_REQUEST_TIMEOUT = 30` 秒
+
+### 4.11 `download_manager.py` — 后台下载管理器
+
+```python
+class DownloadManager:
+    """后台下载管理器，线程安全。支持暂停、恢复、取消、断点续传。"""
+
+    def start_download(version, on_progress, on_complete, on_error, dest_dir=None)
+        # 启动后台下载线程
+        # on_progress(bytes_done, total, filename, speed_bytes_per_sec, eta_seconds)
+        # on_complete(file_path, filename)
+        # on_error(error_message)
+
+    def cancel_download()            # 取消下载（线程安全），删除部分文件
+    def pause_download()             # 暂停下载（线程安全），通过 Event.wait() 阻塞
+    def resume_download()            # 恢复下载（线程安全），set() Event
+    def is_paused() -> bool          # 是否暂停中
+    def is_downloading() -> bool     # 是否下载中（活跃数据传输）
+```
+
+**下载流程**：
+1. `resolve_download_url(version)` — 从 GitHub API 获取下载 URL 和文件大小
+2. `_check_existing_file()` — 已有相同大小文件则跳过
+3. `_perform_download()` — 根据 DNS 状态选择 `urllib` 或 IP 直连
+4. `_verify_downloaded_file()` — 校验大小（已知大小精确匹配，未知 ≥ 1MB）
+5. 网络错误时保留部分文件，下次自动断点续传
+
+**断点续传**：HTTP `Range: bytes=N-` 头，服务器返回 206 时追加写入。
+**暂停机制**：`threading.Event` — `clear()` 阻塞读取循环，`set()` 恢复。
 
 ---
 
@@ -707,4 +765,4 @@ git branch -d feature/xxx
 
 ---
 
-> **最后更新**：2026-07-12
+> **最后更新**：2026-07-25

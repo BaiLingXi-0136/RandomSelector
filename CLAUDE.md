@@ -36,7 +36,9 @@ main.py              → 入口：单实例互斥体 → ft.app(target=main)
         ├── PersonnelManager   → pandas Excel 读写 + 选中状态管理
         ├── FileLockMonitor    → 后台线程轮询文件可写入性
         ├── ui_helpers         → DataTable / 菜单项构建器
-        └── dialogs            → AlertDialog 工厂函数
+        ├── dialogs            → AlertDialog 工厂函数
+        ├── update_check       → GitHub 版本更新检测（纯标准库）
+        └── download_manager   → 后台下载安装包（支持暂停/续传/断点恢复）
 ```
 
 ### 核心设计决策
@@ -63,6 +65,15 @@ Flet 将同步事件处理器（`on_click` 等）通过 `ThreadPoolExecutor` 执
 - **临时模式**：1~20 人（用户输入），不保存状态到文件
 - **拖地模式**：固定 3 人，将选中状态写入 Excel。每天仅允许一次，重复点击弹出确认对话框（确认后清除最近 3 条并重抽）
 
+**更新检测与后台下载** (`update_check.py` / `download_manager.py`)：
+- `update_check.py`：纯标准库实现的 GitHub 版本检测，支持 DNS 劫持回退（hosts → IP 直连）
+- `download_manager.py`：后台下载 GitHub Releases 安装包，使用 `threading` + `urllib`，支持：
+  - **暂停/恢复**：通过 `threading.Event` 控制下载数据流
+  - **断点续传**：HTTP Range 请求（`bytes=N-`），网络中断后可续传
+  - **文件验证**：下载完成后校验文件大小（已知大小时精确匹配，未知时 >= 1MB 阈值）
+  - **重复跳过**：已有相同大小文件时跳过下载
+  - **速度/ETA 显示**：实时计算下载速度和预计剩余时间
+
 ### Excel 数据格式
 
 必须包含列：`姓名`、`学号`、`班级`、`性别`。程序自动维护 `是否已选`（是/否）和 `选择时间` 两列。
@@ -86,13 +97,15 @@ Flet 将同步事件处理器（`on_click` 等）通过 `ThreadPoolExecutor` 执
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
-| `random_selector_ui.py` | ~1307 | 主界面类 `RandomSelectorUI`，包含所有 UI 构建和业务逻辑 |
-| `constants.py` | ~101 | 应用级常量：颜色、字体、标签、尺寸、限制值 |
+| `random_selector_ui.py` | ~1557 | 主界面类 `RandomSelectorUI`，包含所有 UI 构建和业务逻辑 |
+| `constants.py` | ~137 | 应用级常量：颜色、字体、标签、尺寸、限制值 |
 | `config.py` | ~90 | 路径解析、设置读写、首次运行初始化 |
 | `error_handler.py` | ~250 | 全局异常捕获 + 日志轮转 + 错误弹窗 |
 | `dialogs.py` | ~210 | AlertDialog 工厂：关于、帮助、选项（种子）、确认对话框 |
 | `ui_helpers.py` | ~150 | DataTable 构建、菜单项、表格分栏 |
 | `file_monitor.py` | ~105 | `FileLockMonitor` 类，后台线程轮询文件可写性 |
 | `personnel_manager.py` | ~72 | pandas Excel 读写 + 选中状态 CRUD |
+| `update_check.py` | ~145 | 纯标准库 GitHub 版本检测 + DNS 劫持回退 |
+| `download_manager.py` | ~650 | 后台下载管理器：暂停/续传/断点恢复/文件验证 |
 | `main.py` | ~67 | 入口：单实例互斥体 → bootstrap → 启动 Flet app |
 | `build.py` | ~167 | PyInstaller 打包脚本，含版本信息自动生成 |

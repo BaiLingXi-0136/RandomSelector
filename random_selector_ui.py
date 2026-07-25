@@ -18,7 +18,8 @@ from constants import (
     MAX_SELECTION_COUNT, MIN_SELECTION_COUNT, MOPPING_COUNT,
     BACKTRACK_INPUT_WIDTH, ANIMATION_DELAY, REFRESH_ANIMATION_DURATION, DEFAULT_SEED,
     BTN_START, BTN_SHOW_ALL, BTN_SHOW_UNSELECTED, BTN_CLEAR, BTN_BACKTRACK,
-    BTN_DOWNLOAD_BACKGROUND, BTN_CANCEL_DOWNLOAD, BTN_OPEN_INSTALLER,
+    BTN_DOWNLOAD_BACKGROUND, BTN_CANCEL_DOWNLOAD, BTN_PAUSE_DOWNLOAD,
+    BTN_RESUME_DOWNLOAD, BTN_RETRY_DOWNLOAD, BTN_OPEN_INSTALLER,
     MENU_FILE, MENU_EDIT, MENU_VIEW, MENU_TOOLS, MENU_HELP, MENU_CHECK_UPDATE,
     WARN_FILE_LOCKED, WARN_FILE_LOCKED_SELECTION,
     WARN_LOAD_FAILED, WARN_EMPTY_LIST, WARN_ALL_SELECTED, WARN_NO_EXPORT_DATA,
@@ -26,6 +27,7 @@ from constants import (
     DOWNLOAD_STATUS_PREPARING, DOWNLOAD_STATUS_DOWNLOADING,
     DOWNLOAD_STATUS_COMPLETED, DOWNLOAD_ERROR_NETWORK,
     DOWNLOAD_PROGRESS_KNOWN_SIZE, DOWNLOAD_PROGRESS_UNKNOWN_SIZE,
+    DOWNLOAD_SPEED_MB, DOWNLOAD_SPEED_KB, DOWNLOAD_ETA,
 )
 from dialogs import (
     on_menu_about, on_menu_help,
@@ -39,6 +41,20 @@ from ui_helpers import (
     safe_val, make_selection_table, make_row_cells,
     build_split_personnel_tables, menu_item,
 )
+
+
+def _format_seconds(seconds: float) -> str:
+    """将秒数格式化为人类可读的剩余时间字符串。"""
+    if seconds < 1:
+        return "即将完成"
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds} 秒"
+    minutes = seconds // 60
+    secs = seconds % 60
+    if secs == 0:
+        return f"{minutes} 分钟"
+    return f"{minutes} 分 {secs} 秒"
 
 
 class RandomSelectorUI:
@@ -97,6 +113,7 @@ class RandomSelectorUI:
         self._btn_cancel_download: ft.TextButton | None = None
         self._downloaded_file_path: str | None = None
         self._downloaded_version: str | None = None
+        self._last_progress_update_time: float = 0.0
 
     # ==================== 辅助属性 ====================
 
@@ -330,8 +347,15 @@ class RandomSelectorUI:
         self._download_percent_text = ft.Text(
             "", size=FONT_SIZE_HINT, color=COLOR_SUBTLE,
         )
+        self._download_speed_text = ft.Text(
+            "", size=FONT_SIZE_HINT, color=COLOR_SUBTLE,
+        )
         self._download_progress_bar = ft.ProgressBar(
             width=300, color=COLOR_PRIMARY, bgcolor=COLOR_BORDER,
+        )
+        self._btn_pause_download = ft.TextButton(
+            BTN_PAUSE_DOWNLOAD, on_click=self._on_pause_download_click,
+            visible=False,
         )
         self._btn_cancel_download = ft.TextButton(
             BTN_CANCEL_DOWNLOAD, on_click=self._on_cancel_download_click,
@@ -339,6 +363,10 @@ class RandomSelectorUI:
         )
         self._btn_open_installer = ft.TextButton(
             BTN_OPEN_INSTALLER, on_click=self._on_open_installer_click,
+            visible=False,
+        )
+        self._btn_retry_download = ft.TextButton(
+            BTN_RETRY_DOWNLOAD, on_click=self._on_retry_download_click,
             visible=False,
         )
 
@@ -349,10 +377,15 @@ class RandomSelectorUI:
                     self._download_status_text,
                     self._download_percent_text,
                     ft.Container(expand=True),
+                    self._btn_pause_download,
                     self._btn_cancel_download,
                     self._btn_open_installer,
+                    self._btn_retry_download,
                 ], tight=True),
                 self._download_progress_bar,
+                ft.Row([
+                    self._download_speed_text,
+                ]),
             ], tight=True, spacing=4),
             bgcolor=COLOR_INFO_BG,
             border_radius=6,
@@ -379,8 +412,11 @@ class RandomSelectorUI:
         # 显示下载区域
         if self._download_progress_container is not None:
             self._download_progress_container.visible = True
+            self._btn_pause_download.visible = True
+            self._btn_pause_download.text = BTN_PAUSE_DOWNLOAD
             self._btn_cancel_download.visible = True
             self._btn_open_installer.visible = False
+            self._btn_retry_download.visible = False
             self._download_status_text.value = DOWNLOAD_STATUS_PREPARING
             self._download_percent_text.value = ""
             self._download_progress_bar.value = None
@@ -396,12 +432,23 @@ class RandomSelectorUI:
             on_error=self._on_download_error,
         )
 
-    def _on_download_progress(self, bytes_done: int, total: int, filename: str):
+    def _on_download_progress(self, bytes_done: int, total: int, filename: str,
+                              speed: float, eta: float):
         """下载进度回调（从后台线程调用）"""
         if self._download_progress_container is None:
             return
         if not self._download_progress_container.visible:
             self._download_progress_container.visible = True
+
+        # 暂停时跳过进度更新，避免覆盖"下载已暂停"状态文字
+        if self._download_manager and self._download_manager.is_paused():
+            return
+
+        # 节流：每 200ms 最多更新一次 UI，避免刷新过快闪烁
+        now = time.time()
+        if now - self._last_progress_update_time < 0.2:
+            return
+        self._last_progress_update_time = now
 
         self._download_status_text.value = DOWNLOAD_STATUS_DOWNLOADING.format(filename)
 
@@ -418,6 +465,18 @@ class RandomSelectorUI:
             done_mb = bytes_done / (1024 * 1024)
             self._download_percent_text.value = DOWNLOAD_PROGRESS_UNKNOWN_SIZE.format(done_mb)
 
+        # 速度
+        if speed >= 1024 * 1024:
+            self._download_speed_text.value = DOWNLOAD_SPEED_MB.format(speed / (1024 * 1024))
+        elif speed > 0:
+            self._download_speed_text.value = DOWNLOAD_SPEED_KB.format(speed / 1024)
+        else:
+            self._download_speed_text.value = ""
+
+        # 预计剩余时间
+        if eta > 0:
+            self._download_speed_text.value += "  ·  " + DOWNLOAD_ETA.format(_format_seconds(eta))
+
         self._download_progress_container.update()
 
     def _on_download_complete(self, file_path: str, filename: str):
@@ -427,8 +486,10 @@ class RandomSelectorUI:
         self._download_progress_bar.value = 1.0
         self._download_percent_text.value = "100%"
         self._download_percent_text.color = COLOR_SUCCESS_TEXT
+        self._btn_pause_download.visible = False
         self._btn_cancel_download.visible = False
         self._btn_open_installer.visible = True
+        self._btn_retry_download.visible = False
         self._download_progress_container.update()
 
         # 更新标题行状态文字
@@ -442,21 +503,50 @@ class RandomSelectorUI:
         self._download_status_text.value = "下载失败"
         self._download_percent_text.value = message
         self._download_percent_text.color = COLOR_DANGER
-        self._download_progress_bar.value = None
+        self._download_progress_bar.value = 0
+        self._btn_pause_download.visible = False
         self._btn_cancel_download.visible = False
         self._btn_open_installer.visible = False
+        self._btn_retry_download.visible = True
         self._download_progress_container.update()
 
-    def _on_open_installer_click(self, _e):
-        """用户点击"打开安装包"按钮"""
+    def _on_open_installer_click(self, e):
+        """用户点击"打开安装包"按钮后，启动安装程序并退出当前进程"""
         if self._downloaded_file_path:
             import subprocess as _sp
+            import sys as _sys
             _sp.Popen([self._downloaded_file_path], shell=True)
+            e.page.window_destroy()
+            _sys.exit(0)
 
     def _on_cancel_download_click(self, _e):
         """用户点击"取消下载"按钮"""
         if self._download_manager:
             self._download_manager.cancel_download()
+
+    def _on_retry_download_click(self, _e):
+        """用户点击"重试"按钮，使用同一版本重新下载"""
+        version = self._downloaded_version
+        if version:
+            self._on_download_button_click(version)
+
+    def _on_pause_download_click(self, _e):
+        """用户点击"暂停"/"继续下载"按钮"""
+        if self._download_manager is None:
+            return
+        if self._download_manager.is_paused():
+            # 当前暂停中 → 恢复下载
+            self._download_manager.resume_download()
+            self._btn_pause_download.text = BTN_PAUSE_DOWNLOAD
+            self._download_status_text.value = DOWNLOAD_STATUS_DOWNLOADING.format(
+                self._downloaded_version or ""
+            )
+        else:
+            # 当前下载中 → 暂停
+            self._download_manager.pause_download()
+            self._btn_pause_download.text = BTN_RESUME_DOWNLOAD
+            self._download_status_text.value = "下载已暂停"
+        self._download_progress_container.update()
 
     # ==================== 导出结果 ====================
 
