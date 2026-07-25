@@ -116,6 +116,7 @@ def main(page: ft.Page):
         check_for_updates_async(
             page, silent_on_latest=True,
             on_result=app_ui._on_update_check_result,
+            on_download_requested=app_ui._on_download_button_click,
         )
 
     # 启动文件占用实时监测

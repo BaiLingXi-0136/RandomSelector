@@ -18,16 +18,21 @@ from constants import (
     MAX_SELECTION_COUNT, MIN_SELECTION_COUNT, MOPPING_COUNT,
     BACKTRACK_INPUT_WIDTH, ANIMATION_DELAY, REFRESH_ANIMATION_DURATION, DEFAULT_SEED,
     BTN_START, BTN_SHOW_ALL, BTN_SHOW_UNSELECTED, BTN_CLEAR, BTN_BACKTRACK,
+    BTN_DOWNLOAD_BACKGROUND, BTN_CANCEL_DOWNLOAD, BTN_OPEN_INSTALLER,
     MENU_FILE, MENU_EDIT, MENU_VIEW, MENU_TOOLS, MENU_HELP, MENU_CHECK_UPDATE,
     WARN_FILE_LOCKED, WARN_FILE_LOCKED_SELECTION,
     WARN_LOAD_FAILED, WARN_EMPTY_LIST, WARN_ALL_SELECTED, WARN_NO_EXPORT_DATA,
     HINT_TEMP_NOT_SAVED, HINT_BACKTRACK_USAGE, TEST_ERROR_MESSAGE,
+    DOWNLOAD_STATUS_PREPARING, DOWNLOAD_STATUS_DOWNLOADING,
+    DOWNLOAD_STATUS_COMPLETED, DOWNLOAD_ERROR_NETWORK,
+    DOWNLOAD_PROGRESS_KNOWN_SIZE, DOWNLOAD_PROGRESS_UNKNOWN_SIZE,
 )
 from dialogs import (
     on_menu_about, on_menu_help,
     show_options_dialog, show_clear_records_confirm, show_mopping_redo_confirm,
 )
 from update_check import check_for_updates
+from download_manager import DownloadManager
 from file_monitor import FileLockMonitor
 from personnel_manager import PersonnelManager
 from ui_helpers import (
@@ -81,6 +86,17 @@ class RandomSelectorUI:
         self._seed_value: int = settings.get("seed_value", DEFAULT_SEED)
         self._auto_check_update: bool = settings.get("auto_check_update", True)
         self._effective_seed: int | None = None   # 本次抽选实际使用的种子
+
+        # 后台下载
+        self._download_manager: DownloadManager | None = None
+        self._download_progress_container: ft.Container | None = None
+        self._download_progress_bar: ft.ProgressBar | None = None
+        self._download_status_text: ft.Text | None = None
+        self._download_percent_text: ft.Text | None = None
+        self._btn_open_installer: ft.TextButton | None = None
+        self._btn_cancel_download: ft.TextButton | None = None
+        self._downloaded_file_path: str | None = None
+        self._downloaded_version: str | None = None
 
     # ==================== 辅助属性 ====================
 
@@ -285,6 +301,7 @@ class RandomSelectorUI:
         check_for_updates(
             e.page, silent_on_latest=False,
             on_result=self._on_update_check_result,
+            on_download_requested=self._on_download_button_click,
         )
 
     def _on_update_check_result(self, status: str, version: str | None):
@@ -297,10 +314,149 @@ class RandomSelectorUI:
         elif status == "update_available":
             self._update_status_text.value = f"⬆ 新版本 v{version} 可用"
             self._update_status_text.color = COLOR_WARNING
+            self._downloaded_version = version  # 暂存以备下载
         elif status == "error":
             self._update_status_text.value = "⚠ 检查更新失败"
             self._update_status_text.color = COLOR_DANGER
         self._update_status_text.update()
+
+    # ==================== 后台下载 ====================
+
+    def _build_download_progress_area(self) -> ft.Container:
+        """构建下载进度区域（初始隐藏，触发下载时显示）"""
+        self._download_status_text = ft.Text(
+            "", size=FONT_SIZE_SMALL, color=COLOR_HINT,
+        )
+        self._download_percent_text = ft.Text(
+            "", size=FONT_SIZE_HINT, color=COLOR_SUBTLE,
+        )
+        self._download_progress_bar = ft.ProgressBar(
+            width=300, color=COLOR_PRIMARY, bgcolor=COLOR_BORDER,
+        )
+        self._btn_cancel_download = ft.TextButton(
+            BTN_CANCEL_DOWNLOAD, on_click=self._on_cancel_download_click,
+            visible=False,
+        )
+        self._btn_open_installer = ft.TextButton(
+            BTN_OPEN_INSTALLER, on_click=self._on_open_installer_click,
+            visible=False,
+        )
+
+        container = ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.DOWNLOADING, size=18, color=COLOR_PRIMARY),
+                    self._download_status_text,
+                    self._download_percent_text,
+                    ft.Container(expand=True),
+                    self._btn_cancel_download,
+                    self._btn_open_installer,
+                ], tight=True),
+                self._download_progress_bar,
+            ], tight=True, spacing=4),
+            bgcolor=COLOR_INFO_BG,
+            border_radius=6,
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            margin=ft.margin.only(bottom=4),
+            visible=False,
+        )
+        self._download_progress_container = container
+        return container
+
+    def _on_download_button_click(self, version: str):
+        """用户点击"后台下载"按钮后，启动下载"""
+        import os as _os
+        from pathlib import Path as _Path
+
+        self._downloaded_version = version
+
+        # 确定下载目录（用户 Downloads 文件夹）
+        userprofile = _os.environ.get("USERPROFILE", "")
+        downloads_dir = _Path(userprofile) / "Downloads"
+        if not downloads_dir.exists():
+            downloads_dir = _Path.home()
+
+        # 显示下载区域
+        if self._download_progress_container is not None:
+            self._download_progress_container.visible = True
+            self._btn_cancel_download.visible = True
+            self._btn_open_installer.visible = False
+            self._download_status_text.value = DOWNLOAD_STATUS_PREPARING
+            self._download_percent_text.value = ""
+            self._download_progress_bar.value = None
+            self._download_percent_text.color = COLOR_SUBTLE
+            self._download_progress_container.update()
+
+        self._download_manager = DownloadManager()
+        self._download_manager.start_download(
+            version=version,
+            dest_dir=downloads_dir,
+            on_progress=self._on_download_progress,
+            on_complete=self._on_download_complete,
+            on_error=self._on_download_error,
+        )
+
+    def _on_download_progress(self, bytes_done: int, total: int, filename: str):
+        """下载进度回调（从后台线程调用）"""
+        if self._download_progress_container is None:
+            return
+        if not self._download_progress_container.visible:
+            self._download_progress_container.visible = True
+
+        self._download_status_text.value = DOWNLOAD_STATUS_DOWNLOADING.format(filename)
+
+        if total > 0:
+            percent = int(bytes_done / total * 100)
+            self._download_progress_bar.value = percent / 100.0
+            done_mb = bytes_done / (1024 * 1024)
+            total_mb = total / (1024 * 1024)
+            self._download_percent_text.value = DOWNLOAD_PROGRESS_KNOWN_SIZE.format(
+                percent, done_mb, total_mb,
+            )
+        else:
+            self._download_progress_bar.value = None  # 不确定模式
+            done_mb = bytes_done / (1024 * 1024)
+            self._download_percent_text.value = DOWNLOAD_PROGRESS_UNKNOWN_SIZE.format(done_mb)
+
+        self._download_progress_container.update()
+
+    def _on_download_complete(self, file_path: str, filename: str):
+        """下载完成回调（从后台线程调用）"""
+        self._downloaded_file_path = file_path
+        self._download_status_text.value = DOWNLOAD_STATUS_COMPLETED.format(filename)
+        self._download_progress_bar.value = 1.0
+        self._download_percent_text.value = "100%"
+        self._download_percent_text.color = COLOR_SUCCESS_TEXT
+        self._btn_cancel_download.visible = False
+        self._btn_open_installer.visible = True
+        self._download_progress_container.update()
+
+        # 更新标题行状态文字
+        version = self._downloaded_version or ""
+        self._update_status_text.value = f"✓ 新版本已下载: v{version}"
+        self._update_status_text.color = COLOR_SUCCESS_TEXT
+        self._update_status_text.update()
+
+    def _on_download_error(self, message: str):
+        """下载失败回调（从后台线程调用）"""
+        self._download_status_text.value = "下载失败"
+        self._download_percent_text.value = message
+        self._download_percent_text.color = COLOR_DANGER
+        self._download_progress_bar.value = None
+        self._btn_cancel_download.visible = False
+        self._btn_open_installer.visible = False
+        self._download_progress_container.update()
+
+    def _on_open_installer_click(self, _e):
+        """用户点击"打开安装包"按钮"""
+        if self._downloaded_file_path:
+            import subprocess as _sp
+            _sp.Popen([self._downloaded_file_path], shell=True)
+
+    def _on_cancel_download_click(self, _e):
+        """用户点击"取消下载"按钮"""
+        if self._download_manager:
+            self._download_manager.cancel_download()
 
     # ==================== 导出结果 ====================
 
@@ -534,9 +690,13 @@ class RandomSelectorUI:
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
         )
 
+        # 下载进度区域（初始隐藏）
+        self._build_download_progress_area()
+
         # 主布局
         self.main_column = ft.Column([
             title_row,
+            self._download_progress_container,
             self.menu_bar,
             self.status_text,
             self._file_lock_warning,

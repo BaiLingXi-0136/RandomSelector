@@ -19,7 +19,7 @@ from typing import Callable
 import flet as ft
 
 from constants import (
-    APP_VERSION, BTN_CONFIRM,
+    APP_VERSION, BTN_CONFIRM, BTN_DOWNLOAD_BACKGROUND,
     UPDATE_TITLE_AVAILABLE, UPDATE_TITLE_LATEST, UPDATE_TITLE_FAILED,
     UPDATE_MSG_AVAILABLE, UPDATE_MSG_LATEST,
     UPDATE_MSG_NETWORK_ERROR, UPDATE_MSG_PARSE_ERROR,
@@ -31,6 +31,9 @@ from constants import (
 # status: "latest" | "update_available" | "error"
 # version: 远程版本号（仅 "update_available" 时有值）
 UpdateResultCallback = Callable[[str, str | None], None] | None
+
+# 下载请求回调：on_download_requested(version)
+DownloadRequestCallback = Callable[[str], None] | None
 
 # ==================== 配置 ====================
 
@@ -187,11 +190,19 @@ def _show_loading_dialog(page: ft.Page) -> ft.AlertDialog:
     return dialog
 
 
-def _show_update_available_dialog(page: ft.Page, remote_version: str):
-    """弹出"发现新版本"对话框，引导用户前往 GitHub Releases 下载"""
+def _show_update_available_dialog(
+    page: ft.Page, remote_version: str,
+    on_download: Callable[[], None] | None = None,
+):
+    """弹出"发现新版本"对话框，提供前往下载 / 后台下载 / 关闭三个选项"""
     def _go_to_releases(_):
         page.launch_url(GITHUB_RELEASES_URL)
         page.close(dialog)
+
+    def _on_background_download(_):
+        page.close(dialog)
+        if on_download:
+            on_download()
 
     dialog = ft.AlertDialog(
         title=ft.Text(UPDATE_TITLE_AVAILABLE),
@@ -203,10 +214,13 @@ def _show_update_available_dialog(page: ft.Page, remote_version: str):
         content_padding=ft.padding.symmetric(horizontal=24, vertical=20),
         bgcolor=COLOR_SUCCESS_BG,
         actions=[
+            ft.TextButton(BTN_DOWNLOAD_BACKGROUND, on_click=_on_background_download) if on_download else None,
             ft.TextButton("前往下载", on_click=_go_to_releases),
             ft.TextButton("关闭", on_click=lambda _: page.close(dialog)),
         ],
     )
+    # 过滤掉 None 按钮
+    dialog.actions = [a for a in dialog.actions if a is not None]
     page.open(dialog)
 
 
@@ -243,7 +257,8 @@ def _show_check_failed_dialog(page: ft.Page, message: str):
 
 def _do_check(page: ft.Page, silent_on_latest: bool,
               loading_dialog: ft.AlertDialog | None,
-              on_result: UpdateResultCallback):
+              on_result: UpdateResultCallback,
+              on_download_requested: DownloadRequestCallback = None):
     """在后台线程中执行实际的网络检查并更新 UI。
 
     先关闭 loading_dialog（如有），再根据结果弹窗并调用 on_result。
@@ -272,7 +287,12 @@ def _do_check(page: ft.Page, silent_on_latest: bool,
         return
 
     if remote_tuple > local_tuple:
-        _show_update_available_dialog(page, remote_version)
+        _show_update_available_dialog(
+            page, remote_version,
+            on_download=(
+                lambda: on_download_requested(remote_version)
+            ) if on_download_requested else None,
+        )
         if on_result:
             on_result("update_available", remote_version)
     else:
@@ -289,6 +309,7 @@ def check_for_updates(
     page: ft.Page,
     silent_on_latest: bool = False,
     on_result: UpdateResultCallback = None,
+    on_download_requested: DownloadRequestCallback = None,
 ):
     """检查更新（异步，不阻塞 UI）。
 
@@ -298,11 +319,13 @@ def check_for_updates(
         page: Flet Page 实例
         silent_on_latest: 已是新版时是否弹窗（自动检查用 True）
         on_result: 结果回调，用于更新窗口内状态文字
+        on_download_requested: 下载请求回调，用户点击"后台下载"时触发
     """
     loading_dialog = _show_loading_dialog(page)
 
     def _run():
-        _do_check(page, silent_on_latest, loading_dialog, on_result)
+        _do_check(page, silent_on_latest, loading_dialog, on_result,
+                  on_download_requested)
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()
@@ -313,6 +336,7 @@ def check_for_updates_async(
     delay: float = 3.0,
     silent_on_latest: bool = True,
     on_result: UpdateResultCallback = None,
+    on_download_requested: DownloadRequestCallback = None,
 ):
     """启动时后台自动检查更新（无加载窗口，延迟执行）。
 
@@ -321,10 +345,12 @@ def check_for_updates_async(
         delay: 延迟秒数
         silent_on_latest: 已是新版时是否静默
         on_result: 结果回调
+        on_download_requested: 下载请求回调，用户点击"后台下载"时触发
     """
     def _run():
         time.sleep(delay)
-        _do_check(page, silent_on_latest, loading_dialog=None, on_result=on_result)
+        _do_check(page, silent_on_latest, loading_dialog=None, on_result=on_result,
+                  on_download_requested=on_download_requested)
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()

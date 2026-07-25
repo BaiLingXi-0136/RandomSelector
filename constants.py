@@ -111,5 +111,21 @@ GITHUB_REPO_URL = "https://github.com/BaiLingXi-0136/RandomSelector"
 GITHUB_RELEASES_URL = GITHUB_REPO_URL + "/releases"
 GITHUB_ISSUES_URL = GITHUB_REPO_URL + "/issues"
 
+# ==================== 后台下载 ====================
+BTN_DOWNLOAD_BACKGROUND = "后台下载"
+BTN_CANCEL_DOWNLOAD = "取消下载"
+BTN_OPEN_INSTALLER = "打开安装包"
+DOWNLOAD_TITLE = "更新下载"
+DOWNLOAD_STATUS_PREPARING = "正在准备下载..."
+DOWNLOAD_STATUS_DOWNLOADING = "正在下载 {}"
+DOWNLOAD_STATUS_COMPLETED = "下载完成: {}"
+DOWNLOAD_STATUS_CANCELLED = "下载已取消"
+DOWNLOAD_ERROR_NETWORK = "下载失败：网络连接异常，请稍后重试"
+DOWNLOAD_ERROR_DISK_FULL = "下载失败：磁盘空间不足"
+DOWNLOAD_ERROR_UNKNOWN = "下载失败：{}"
+DOWNLOAD_ERROR_URL_RESOLVE = "下载失败：无法获取下载地址"
+DOWNLOAD_PROGRESS_KNOWN_SIZE = "{}%  ({:.1f} MB / {:.1f} MB)"
+DOWNLOAD_PROGRESS_UNKNOWN_SIZE = "{:.1f} MB 已下载"
+
 # ==================== 测试/调试 ====================
 TEST_ERROR_MESSAGE = "这是一条测试异常，用于验证错误捕获机制是否正常工作。"
