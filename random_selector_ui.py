@@ -1292,7 +1292,6 @@ class RandomSelectorUI:
     # ==================== 人员查看 ====================
 
     def show_all_personnel(self, e):
-        self._clear_selection_context()
         self.result_area.controls.clear()
 
         if not self.personnel_manager.load_data():
@@ -1307,31 +1306,97 @@ class RandomSelectorUI:
             self.result_area.update()
             return
 
-        all_personnel = self.personnel_manager.get_all_personnel()
-        split_tables = build_split_personnel_tables(all_personnel, include_status=True)
+        mode = self._last_mode
 
-        total = len(all_personnel)
-        selected_count = (all_personnel['是否已选'] == '是').sum()
+        if mode == "temporary":
+            # 临时模式：显示会话级数据（选中状态未保存到文件）
+            all_personnel = self.personnel_manager.get_all_personnel()
+            all_personnel = self._filter_out_backtracked(all_personnel)
 
-        self.result_area.controls.extend([
-            ft.Text("所有人员信息", size=FONT_SIZE_SECTION, weight=ft.FontWeight.BOLD),
-            ft.Divider(),
-            split_tables,
-            ft.Container(
+            # 从当前会话的选中行构建 selected_ids
+            if (self._last_selected_rows is not None
+                    and not self._last_selected_rows.empty):
+                selected_ids = set(
+                    self._last_selected_rows['学号'].astype(str).str.strip()
+                )
+                all_personnel['是否已选'] = (
+                    all_personnel['学号'].astype(str).str.strip()
+                    .isin(selected_ids)
+                    .map({True: '是', False: '否'})
+                )
+            else:
+                all_personnel['是否已选'] = '否'
+
+            if all_personnel.empty:
+                self.result_area.controls.append(
+                    ft.Container(
+                        ft.Text(WARN_EMPTY_LIST),
+                        bgcolor=COLOR_ERROR_BG,
+                        padding=10,
+                        border_radius=5,
+                    )
+                )
+                self.result_area.update()
+                return
+
+            split_tables = build_split_personnel_tables(
+                all_personnel, include_status=True
+            )
+
+            total = len(all_personnel)
+            selected_count = (all_personnel['是否已选'] == '是').sum()
+
+            self.result_area.controls.extend([
                 ft.Text(
-                    f"统计：总人数 {total}，已选择 {selected_count}，"
-                    f"未选择 {total - selected_count}"
+                    "所有人员信息（临时模式 - 会话状态）",
+                    size=FONT_SIZE_SECTION, weight=ft.FontWeight.BOLD,
                 ),
-                bgcolor=COLOR_INFO_BG,
-                padding=10,
-                border_radius=5,
-                margin=ft.Margin(top=10, bottom=0, left=0, right=0),
-            ),
-        ])
+                ft.Divider(),
+                split_tables,
+                ft.Container(
+                    ft.Text(
+                        f"统计：总人数 {total}，已选择 {selected_count}，"
+                        f"未选择 {total - selected_count}"
+                        f"（临时模式，未保存到文件）"
+                    ),
+                    bgcolor=COLOR_INFO_BG,
+                    padding=10,
+                    border_radius=5,
+                    margin=ft.Margin(top=10, bottom=0, left=0, right=0),
+                ),
+            ])
+        else:
+            # 拖地模式或无模式：显示 Excel 持久化数据
+            all_personnel = self.personnel_manager.get_all_personnel()
+            split_tables = build_split_personnel_tables(
+                all_personnel, include_status=True
+            )
+
+            total = len(all_personnel)
+            selected_count = (all_personnel['是否已选'] == '是').sum()
+
+            self.result_area.controls.extend([
+                ft.Text(
+                    "所有人员信息（拖地模式）",
+                    size=FONT_SIZE_SECTION, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Divider(),
+                split_tables,
+                ft.Container(
+                    ft.Text(
+                        f"统计：总人数 {total}，已选择 {selected_count}，"
+                        f"未选择 {total - selected_count}"
+                    ),
+                    bgcolor=COLOR_INFO_BG,
+                    padding=10,
+                    border_radius=5,
+                    margin=ft.Margin(top=10, bottom=0, left=0, right=0),
+                ),
+            ])
+
         e.page.update()
 
     def show_unselected_personnel(self, e):
-        self._clear_selection_context()
         self.result_area.controls.clear()
 
         if not self.personnel_manager.load_data():
@@ -1346,28 +1411,74 @@ class RandomSelectorUI:
             self.result_area.update()
             return
 
-        unselected_df = self.personnel_manager.get_unselected_personnel()
+        mode = self._last_mode
 
-        if unselected_df.empty:
-            self.result_area.controls.append(
-                ft.Container(
-                    ft.Text(WARN_ALL_SELECTED),
-                    bgcolor=COLOR_SUCCESS_BG,
-                    padding=10,
-                    border_radius=5,
+        if mode == "temporary":
+            # 临时模式：显示会话级可用人员（全部 - 已回溯 - 已选中）
+            all_personnel = self.personnel_manager.get_all_personnel()
+            all_personnel = self._filter_out_backtracked(all_personnel)
+
+            # 排除当前会话已选中的人员
+            if (self._last_selected_rows is not None
+                    and not self._last_selected_rows.empty):
+                selected_ids = set(
+                    self._last_selected_rows['学号'].astype(str).str.strip()
                 )
+                all_personnel = all_personnel[
+                    ~all_personnel['学号'].astype(str).str.strip().isin(selected_ids)
+                ]
+
+            if all_personnel.empty:
+                self.result_area.controls.append(
+                    ft.Container(
+                        ft.Text(WARN_ALL_SELECTED),
+                        bgcolor=COLOR_SUCCESS_BG,
+                        padding=10,
+                        border_radius=5,
+                    )
+                )
+                self.result_area.update()
+                return
+
+            split_tables = build_split_personnel_tables(
+                all_personnel, include_status=False
             )
-            self.result_area.update()
-            return
 
-        split_tables = build_split_personnel_tables(unselected_df, include_status=False)
+            self.result_area.controls.extend([
+                ft.Text(
+                    f"未选择的人员（临时模式 - 共{len(all_personnel)}名）",
+                    size=FONT_SIZE_SECTION, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Divider(),
+                split_tables,
+            ])
+        else:
+            # 拖地模式或无模式：显示 Excel 持久化数据
+            unselected_df = self.personnel_manager.get_unselected_personnel()
 
-        self.result_area.controls.extend([
-            ft.Text(
-                f"未选择的人员（共{len(unselected_df)}名）",
-                size=FONT_SIZE_SECTION, weight=ft.FontWeight.BOLD,
-            ),
-            ft.Divider(),
-            split_tables,
-        ])
+            if unselected_df.empty:
+                self.result_area.controls.append(
+                    ft.Container(
+                        ft.Text(WARN_ALL_SELECTED),
+                        bgcolor=COLOR_SUCCESS_BG,
+                        padding=10,
+                        border_radius=5,
+                    )
+                )
+                self.result_area.update()
+                return
+
+            split_tables = build_split_personnel_tables(
+                unselected_df, include_status=False
+            )
+
+            self.result_area.controls.extend([
+                ft.Text(
+                    f"未选择的人员（拖地模式 - 共{len(unselected_df)}名）",
+                    size=FONT_SIZE_SECTION, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Divider(),
+                split_tables,
+            ])
+
         e.page.update()
