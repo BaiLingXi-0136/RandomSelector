@@ -335,8 +335,7 @@ python build.py --clean-only # 仅清理
 **打包流程**：
 1. `generate_version_file()` — 从 `constants.APP_VERSION` 动态生成 `config/version_info.txt`
 2. `clean()` — 删除 `build/`、`dist/`、`*.spec`、`version_info.txt`
-3. `build()` — 调用 PyInstaller，`--windowed` 模式
-4. 复制 `README.md` 到 `dist/RandomSelector/`
+3. `build()` — 调用 PyInstaller，`--windowed` 模式（README.md 通过 DATAS 自动打包）
 
 ### 4.10 `update_check.py` — 版本更新检测
 

@@ -27,6 +27,7 @@ DATAS = [
     ("config/icon.ico", "config"),
     ("config/data/DefaultList.xlsx", "config/data"),
     ("md_files", "md_files"),
+    ("README.md", "."),          # 帮助对话框读取，放根目录供 GitHub 识别
 ]
 
 # PyInstaller --add-data 在不同平台使用不同分隔符
