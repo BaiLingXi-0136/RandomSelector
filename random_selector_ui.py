@@ -776,7 +776,7 @@ class RandomSelectorUI:
 
         # 标题栏：程序名 + 版本号（左），更新状态（右）
         self._update_status_text = ft.Text(
-            "", size=FONT_SIZE_HINT, color=COLOR_SUBTLE, italic=True,
+            "", size=FONT_SIZE_HINT, color=COLOR_SUBTLE,
         )
         title_row = ft.Row(
             [
