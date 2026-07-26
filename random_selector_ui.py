@@ -101,6 +101,7 @@ class RandomSelectorUI:
         self._seed_enabled: bool = settings.get("seed_enabled", False)
         self._seed_value: int = settings.get("seed_value", DEFAULT_SEED)
         self._auto_check_update: bool = settings.get("auto_check_update", True)
+        self._download_path: str = settings.get("download_path", "")
         self._effective_seed: int | None = None   # 本次抽选实际使用的种子
 
         # 后台下载
@@ -300,17 +301,21 @@ class RandomSelectorUI:
             seed_enabled=self._seed_enabled,
             seed_value=self._seed_value,
             auto_check_update=self._auto_check_update,
+            download_path=self._download_path,
             on_save=self._save_settings,
         )
 
-    def _save_settings(self, enabled: bool, value: int, auto_check: bool):
+    def _save_settings(self, enabled: bool, value: int, auto_check: bool,
+                       download_path: str):
         self._seed_enabled = enabled
         self._seed_value = value
         self._auto_check_update = auto_check
+        self._download_path = download_path
         save_settings({
             "seed_enabled": enabled,
             "seed_value": value,
             "auto_check_update": auto_check,
+            "download_path": download_path,
         })
 
     def _on_check_update(self, e):
@@ -403,11 +408,16 @@ class RandomSelectorUI:
 
         self._downloaded_version = version
 
-        # 确定下载目录（用户 Downloads 文件夹）
-        userprofile = _os.environ.get("USERPROFILE", "")
-        downloads_dir = _Path(userprofile) / "Downloads"
-        if not downloads_dir.exists():
-            downloads_dir = _Path.home()
+        # 确定下载目录：优先使用用户设置，否则为 Downloads 文件夹
+        if self._download_path:
+            downloads_dir = _Path(self._download_path)
+            if not downloads_dir.exists():
+                downloads_dir = _Path.home()
+        else:
+            userprofile = _os.environ.get("USERPROFILE", "")
+            downloads_dir = _Path(userprofile) / "Downloads"
+            if not downloads_dir.exists():
+                downloads_dir = _Path.home()
 
         # 显示下载区域
         if self._download_progress_container is not None:

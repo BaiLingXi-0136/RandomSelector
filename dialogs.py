@@ -127,7 +127,8 @@ def show_options_dialog(
     seed_enabled: bool,
     seed_value: int,
     auto_check_update: bool,
-    on_save: Callable[[bool, int, bool], None],
+    download_path: str,
+    on_save: Callable[[bool, int, bool, str], None],
 ):
     """打开选项配置对话框，用户确认后通过 on_save 回调保存"""
 
@@ -155,6 +156,27 @@ def show_options_dialog(
 
     seed_checkbox.on_change = on_checkbox_change
 
+    # 下载路径
+    download_path_text = ft.Text(
+        download_path if download_path else "默认（Downloads 文件夹）",
+        size=FONT_SIZE_HINT,
+        color=COLOR_SUBTLE,
+        italic=True,
+        max_lines=2,
+        overflow=ft.TextOverflow.ELLIPSIS,
+    )
+    folder_picker = ft.FilePicker(
+        on_result=lambda e: _on_download_dir_picked(e, download_path_text),
+    )
+    page.overlay.append(folder_picker)
+
+    def _on_download_dir_picked(e: ft.FilePickerResultEvent, text_widget: ft.Text):
+        if e.path:
+            text_widget.value = e.path
+        else:
+            text_widget.value = download_path if download_path else "默认（Downloads 文件夹）"
+        text_widget.update()
+
     def on_confirm(_e):
         try:
             val = int(seed_input.value)
@@ -166,7 +188,10 @@ def show_options_dialog(
             return
 
         page.close(dialog)
-        on_save(seed_checkbox.value, val, auto_check_checkbox.value)
+        on_save(
+            seed_checkbox.value, val, auto_check_checkbox.value,
+            download_path_text.value if download_path_text.value != "默认（Downloads 文件夹）" else "",
+        )
 
     def on_cancel(_e):
         page.close(dialog)
@@ -176,6 +201,21 @@ def show_options_dialog(
         content=ft.Column(
             [
                 auto_check_checkbox,
+                ft.Divider(height=1, color=COLOR_HINT),
+                ft.Text("后台下载路径：", weight=ft.FontWeight.BOLD),
+                ft.Row([
+                    ft.Container(
+                        download_path_text,
+                        expand=True,
+                    ),
+                    ft.ElevatedButton(
+                        "更改...",
+                        on_click=lambda _: folder_picker.get_directory_path(
+                            dialog_title="选择下载目录",
+                        ),
+                        height=32,
+                    ),
+                ]),
                 ft.Divider(height=1, color=COLOR_HINT),
                 seed_checkbox,
                 ft.Row([ft.Text("种子值："), seed_input]),
@@ -187,6 +227,7 @@ def show_options_dialog(
                 ),
             ],
             tight=True,
+            spacing=8,
         ),
         actions=[
             ft.TextButton(BTN_CANCEL, on_click=on_cancel),
