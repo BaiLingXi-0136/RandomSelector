@@ -3,6 +3,7 @@ __pycache__/
 build/
 dist/
 .claude/
+CLAUDE.md
 *.spec
 *.iss
 config/version_info.txt
