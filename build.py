@@ -109,7 +109,6 @@ def clean():
     # 清理历史 Inno Setup 脚本文件
     for iss_file in (PROJECT_ROOT / "config").glob("*.iss"):
         iss_file.unlink()
-        print(f"[clean] 已清理: {iss_file}")
     print("[clean] 清理完成")
 
 
@@ -200,9 +199,13 @@ def build_installer():
 
     print(f"[build] 编译器: {iscc}")
     print(f"[build] 开始编译安装包...")
-    result = subprocess.run([iscc, str(iss_path)])
+    result = subprocess.run([iscc, str(iss_path)], capture_output=True, text=True)
     if result.returncode != 0:
         print(f"\n[build] 安装包编译失败，退出码: {result.returncode}")
+        if result.stderr:
+            print(result.stderr)
+        if result.stdout:
+            print(result.stdout)
         sys.exit(result.returncode)
 
     print(f"[build] 安装包编译完成！")
@@ -210,6 +213,8 @@ def build_installer():
 
 def build():
     """执行 PyInstaller 打包"""
+    dist_dir = PROJECT_ROOT / "dist" / APP_NAME
+
     # 根据 constants.APP_VERSION 动态生成版本信息文件
     generate_version_file()
 
@@ -231,11 +236,8 @@ def build():
     ]
 
     print(f"[build] 开始打包...")
-    print(f"[build] {' '.join(cmd)}")
-    print()
 
-    # PyInstaller 会直接接管输出
-    result = subprocess.run(cmd).returncode
+    result = subprocess.run(cmd, capture_output=True, text=True).returncode
     if result != 0:
         print(f"\n[build] 打包失败，退出码: {result}")
         sys.exit(result)
