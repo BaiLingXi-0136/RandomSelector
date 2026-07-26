@@ -106,6 +106,10 @@ def clean():
     version_file = PROJECT_ROOT / VERSION_FILE
     if version_file.exists():
         version_file.unlink()
+    # 清理历史 Inno Setup 脚本文件
+    for iss_file in (PROJECT_ROOT / "config").glob("*.iss"):
+        iss_file.unlink()
+        print(f"[clean] 已清理: {iss_file}")
     print("[clean] 清理完成")
 
 
