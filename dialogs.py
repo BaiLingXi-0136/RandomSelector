@@ -18,7 +18,7 @@ from constants import (
 
 def show_about_dialog(page: ft.Page):
     """打开关于对话框（内容从 ABOUT.md 读取）"""
-    about_path = RESOURCE_DIR / "md_files" / "ABOUT.md"
+    about_path = RESOURCE_DIR / "docs" / "ABOUT.md"
     try:
         about_text = about_path.read_text(encoding="utf-8")
     except OSError:

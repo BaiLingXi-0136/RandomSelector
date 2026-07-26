@@ -26,7 +26,7 @@ VERSION_FILE = "config/version_info.txt"      # 自动生成：不要手动编�
 DATAS = [
     ("config/icon.ico", "config"),
     ("config/data/DefaultList.xlsx", "config/data"),
-    ("md_files", "md_files"),
+    ("docs", "docs"),
     ("README.md", "."),          # 帮助对话框读取，放根目录供 GitHub 识别
 ]
 
