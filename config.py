@@ -37,8 +37,13 @@ def bootstrap():
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 复制 ABOUT.md
-    _copy_if_missing("ABOUT.md", RESOURCE_DIR / "docs" / "ABOUT.md", CONFIG_DIR / "ABOUT.md")
+    # 复制 docs 文件夹到可写目录（ABOUT.md / DEVELOPER.md / UPDATE.md 等）
+    src_docs = RESOURCE_DIR / "docs"
+    dest_docs = BASE_DIR / "docs"
+    if src_docs.exists():
+        dest_docs.mkdir(parents=True, exist_ok=True)
+        for item in src_docs.iterdir():
+            _copy_if_missing(item.name, item, dest_docs / item.name)
 
     # 复制默认 Excel 文件
     _copy_if_missing(

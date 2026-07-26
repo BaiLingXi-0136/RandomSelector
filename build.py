@@ -179,6 +179,14 @@ Name: "{{autodesktop}}\\{{#MyAppName}}"; Filename: "{{app}}\\{{#MyAppExeName}}";
 
 [Run]
 Filename: "{{app}}\\{{#MyAppExeName}}"; Description: "{{cm:LaunchProgram,{{#StringChange(MyAppName, '&', '&&')}}}}"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+Name: "{{app}}\\config"; Type: filesandordirs
+Name: "{{app}}\\docs"; Type: filesandordirs
+
+[InstallDelete]
+Name: "{{app}}\\config"; Type: filesandordirs
+Name: "{{app}}\\docs"; Type: filesandordirs
 """
 
     iss_path.parent.mkdir(parents=True, exist_ok=True)

@@ -18,10 +18,16 @@ from constants import (
 
 def show_about_dialog(page: ft.Page):
     """打开关于对话框（内容从 ABOUT.md 读取）"""
-    about_path = RESOURCE_DIR / "docs" / "ABOUT.md"
-    try:
-        about_text = about_path.read_text(encoding="utf-8")
-    except OSError:
+    # 优先从可写目录查找（打包后用户可修改），其次从资源目录查找
+    for base in (BASE_DIR, RESOURCE_DIR):
+        about_path = base / "docs" / "ABOUT.md"
+        if about_path.exists():
+            try:
+                about_text = about_path.read_text(encoding="utf-8")
+                break
+            except OSError:
+                continue
+    else:
         about_text = "无法加载关于信息"
 
     dialog = ft.AlertDialog(
