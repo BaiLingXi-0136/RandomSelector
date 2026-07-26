@@ -20,37 +20,37 @@
 
 ## 1. 项目概览
 
-| 属性     | 说明                                                  |
+| 属性     | 说明                                                |
 |--------|-----------------------------------------------------|
-| 项目名称   | 随机点名系统 (RandomSelector)                             |
-| 当前版本   | `4.5.0`（定义于 `constants.py:5`）                       |
+| 项目名称   | 随机点名系统 (RandomSelector)                       |
+| 当前版本   | `4.5.1`（定义于 `constants.py:5`）                  |
 | 技术栈    | Python 3.8+ / Flet (Flutter) / pandas / PyInstaller |
-| 目标平台   | Windows 桌面                                          |
-| GUI 框架 | Flet ≥ 0.21.0（基于 Flutter 的 Python 绑定）               |
-| 数据存储   | Excel `.xlsx`（pandas 读写）                            |
+| 目标平台   | Windows 桌面                                        |
+| GUI 框架 | Flet ≥ 0.21.0（基于 Flutter 的 Python 绑定）        |
+| 数据存储   | Excel `.xlsx`（pandas 读写）                        |
 | 配置存储   | JSON (`config/settings.json`)                       |
 
 ### 文件清单
 
 ```
 version4.0/
-├── main.py                   # 入口：单实例互斥体 → Flet app 启动
-├── config.py                 # 路径抽象层：BASE_DIR / RESOURCE_DIR 双轨制
-├── constants.py              # 所有常量：颜色、字体、尺寸、标签、限制值
-├── random_selector_ui.py     # 主界面 RandomSelectorUI（~1557 行），UI + 业务逻辑
-├── error_handler.py          # 全局异常捕获：monkey-patch + excepthook 兜底
-├── dialogs.py                # AlertDialog 工厂函数（关于、帮助、选项、确认）
-├── ui_helpers.py             # DataTable / 菜单项 / 分栏表格构建器
-├── file_monitor.py           # FileLockMonitor：后台线程轮询文件可写性
-├── personnel_manager.py      # PersonnelManager：pandas Excel 读写 + 选中状态 CRUD
-├── update_check.py           # GitHub 版本检测：纯标准库 + DNS 劫持回退（~145 行）
-├── download_manager.py       # 后台下载管理器：暂停/续传/断点恢复/文件验证（~650 行）
-├── build.py                  # PyInstaller 打包脚本（版本号自动从 constants 读取）
-├── README.md                 # 用户手册
-├── CLAUDE.md                 # AI 编码助手指令（非人类开发者文档）
-├── DEVELOPER.md              # 本文件
+├── main.py                    # 入口：单实例互斥体 → Flet app 启动
+├── config.py                  # 路径抽象层：BASE_DIR / RESOURCE_DIR 双轨制
+├── constants.py               # 所有常量：颜色、字体、尺寸、标签、限制值
+├── random_selector_ui.py      # 主界面 RandomSelectorUI（~1557 行），UI + 业务逻辑
+├── error_handler.py           # 全局异常捕获：monkey-patch + excepthook 兜底
+├── dialogs.py                 # AlertDialog 工厂函数（关于、帮助、选项、确认）
+├── ui_helpers.py              # DataTable / 菜单项 / 分栏表格构建器
+├── file_monitor.py            # FileLockMonitor：后台线程轮询文件可写性
+├── personnel_manager.py       # PersonnelManager：pandas Excel 读写 + 选中状态 CRUD
+├── update_check.py            # GitHub 版本检测：纯标准库 + DNS 劫持回退（~145 行）
+├── download_manager.py        # 后台下载管理器：暂停/续传/断点恢复/文件验证（~650 行）
+├── build.py                   # PyInstaller 打包脚本（版本号自动从 constants 读取）
+├── README.md                  # 用户手册
+├── CLAUDE.md                  # AI 编码助手指令（非人类开发者文档）
+├── DEVELOPER.md               # 本文件
 └── config/
-    ├── ABOUT.md              # 关于对话框内容（Markdown）
+    ├── ABOUT.md               # 关于对话框内容（Markdown）
     ├── settings.json          # 运行时配置（JSON）
     ├── icon.ico               # 程序图标
     ├── version_info.txt       # 打包时自动生成，已加入 .gitignore

@@ -18,7 +18,7 @@ from constants import (
 
 def show_about_dialog(page: ft.Page):
     """打开关于对话框（内容从 ABOUT.md 读取）"""
-    about_path = RESOURCE_DIR / "config" / "ABOUT.md"
+    about_path = RESOURCE_DIR / "md_files" / "ABOUT.md"
     try:
         about_text = about_path.read_text(encoding="utf-8")
     except OSError:
@@ -51,7 +51,7 @@ def open_help_dialog(page: ft.Page):
     """在给定 page 上打开使用说明对话框（内容从 README.md 读取）"""
     # 优先从资源目录查找（开发模式），其次从 exe 所在目录查找（打包后）
     for base in (RESOURCE_DIR, BASE_DIR):
-        readme_path = base / "README.md"
+        readme_path = base / "md_files" / "README.md"
         if readme_path.exists():
             try:
                 help_text = readme_path.read_text(encoding="utf-8")

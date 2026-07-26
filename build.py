@@ -25,8 +25,8 @@ VERSION_FILE = "config/version_info.txt"      # 自动生成：不要手动编�
 # 需要打包进 exe 的资源文件（只读资源，通过 RESOURCE_DIR 访问）
 DATAS = [
     ("config/icon.ico", "config"),
-    ("config/ABOUT.md", "config"),
     ("config/data/DefaultList.xlsx", "config/data"),
+    ("md_files", "md_files"),
 ]
 
 # PyInstaller --add-data 在不同平台使用不同分隔符
@@ -235,16 +235,6 @@ def build():
     if result != 0:
         print(f"\n[build] 打包失败，退出码: {result}")
         sys.exit(result)
-
-    # 将 README.md 复制到 exe 所在目录（帮助对话框从中读取）
-    dist_dir = PROJECT_ROOT / "dist" / APP_NAME
-    readme_src = PROJECT_ROOT / "README.md"
-    readme_dest = dist_dir / "README.md"
-    try:
-        shutil.copy2(readme_src, readme_dest)
-        print(f"[build] README.md 已复制到 {readme_dest}")
-    except OSError as e:
-        print(f"[build] 复制 README.md 失败: {e}")
 
     print(f"\n[build] 打包完成！")
     print(f"[build] 输出目录: {dist_dir}")

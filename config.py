@@ -38,7 +38,7 @@ def bootstrap():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     # 复制 ABOUT.md
-    _copy_if_missing("ABOUT.md", RESOURCE_DIR / "config" / "ABOUT.md", CONFIG_DIR / "ABOUT.md")
+    _copy_if_missing("ABOUT.md", RESOURCE_DIR / "md_files" / "ABOUT.md", CONFIG_DIR / "ABOUT.md")
 
     # 复制默认 Excel 文件
     _copy_if_missing(
