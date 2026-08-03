@@ -29,6 +29,7 @@ def _ensure_single_instance() -> bool:
     return True
 
 
+# noinspection unresolved-references
 def main(page: ft.Page):
     """主函数"""
     bootstrap()
@@ -88,13 +89,13 @@ def main(page: ft.Page):
     actual_width = min(WINDOW_WIDTH, max_logical_w)
     actual_height = min(WINDOW_HEIGHT, max_logical_h)
 
-    page.window_width = actual_width
-    page.window_height = actual_height
-    page.window_min_width = min(actual_width, 480)
-    page.window_min_height = min(actual_height, 340)
+    page.window.width = actual_width
+    page.window.height = actual_height
+    page.window.min_width = min(actual_width, 480)
+    page.window.min_height = min(actual_height, 340)
     page.window.max_width = max_logical_w
     page.window.max_height = max_logical_h
-    page.window_resizable = True
+    page.window.resizable = True
     page.window.center()
 
     app_ui = RandomSelectorUI()
@@ -115,8 +116,8 @@ def main(page: ft.Page):
         from update_check import check_for_updates_async
         check_for_updates_async(
             page, silent_on_latest=True,
-            on_result=app_ui._on_update_check_result,
-            on_download_requested=app_ui._on_download_button_click,
+            on_result=app_ui.on_update_check_result,
+            on_download_requested=app_ui.on_download_button_click,
         )
 
     # 启动文件占用实时监测

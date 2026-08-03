@@ -1,10 +1,12 @@
 """随机点名系统 — UI 层"""
 import random as _stdlib_random
+import threading
 import time
-import pandas as pd
-import flet as ft
 from datetime import datetime
 from pathlib import Path
+
+import flet as ft
+import pandas as pd
 
 from config import DATA_DIR, load_settings, save_settings
 from constants import (
@@ -18,22 +20,20 @@ from constants import (
     MAX_SELECTION_COUNT, MIN_SELECTION_COUNT, MOPPING_COUNT,
     BACKTRACK_INPUT_WIDTH, ANIMATION_DELAY, REFRESH_ANIMATION_DURATION, DEFAULT_SEED,
     BTN_START, BTN_SHOW_ALL, BTN_SHOW_UNSELECTED, BTN_CLEAR, BTN_BACKTRACK,
-    BTN_DOWNLOAD_BACKGROUND, BTN_CANCEL_DOWNLOAD, BTN_PAUSE_DOWNLOAD,
+    BTN_CANCEL_DOWNLOAD, BTN_PAUSE_DOWNLOAD,
     BTN_RESUME_DOWNLOAD, BTN_RETRY_DOWNLOAD, BTN_OPEN_INSTALLER,
     MENU_FILE, MENU_EDIT, MENU_VIEW, MENU_TOOLS, MENU_HELP, MENU_CHECK_UPDATE,
     WARN_FILE_LOCKED, WARN_FILE_LOCKED_SELECTION,
     WARN_LOAD_FAILED, WARN_EMPTY_LIST, WARN_ALL_SELECTED, WARN_NO_EXPORT_DATA,
     HINT_TEMP_NOT_SAVED, HINT_BACKTRACK_USAGE, TEST_ERROR_MESSAGE,
     DOWNLOAD_STATUS_PREPARING, DOWNLOAD_STATUS_DOWNLOADING,
-    DOWNLOAD_STATUS_COMPLETED, DOWNLOAD_ERROR_NETWORK,
-    DOWNLOAD_PROGRESS_KNOWN_SIZE, DOWNLOAD_PROGRESS_UNKNOWN_SIZE,
+    DOWNLOAD_STATUS_COMPLETED, DOWNLOAD_PROGRESS_KNOWN_SIZE, DOWNLOAD_PROGRESS_UNKNOWN_SIZE,
     DOWNLOAD_SPEED_MB, DOWNLOAD_SPEED_KB, DOWNLOAD_ETA,
 )
 from dialogs import (
     on_menu_about, on_menu_help,
     show_options_dialog, show_clear_records_confirm, show_mopping_redo_confirm,
 )
-from update_check import check_for_updates
 from download_manager import DownloadManager
 from file_monitor import FileLockMonitor
 from personnel_manager import PersonnelManager
@@ -41,6 +41,7 @@ from ui_helpers import (
     safe_val, make_selection_table, make_row_cells,
     build_split_personnel_tables, menu_item,
 )
+from update_check import check_for_updates
 
 
 def _format_seconds(seconds: float) -> str:
@@ -175,7 +176,7 @@ class RandomSelectorUI:
 
         # 2. 停留片刻让用户看到刷新动画
         page.update()
-        time.sleep(REFRESH_ANIMATION_DURATION)
+        threading.Event().wait(REFRESH_ANIMATION_DURATION)
 
         # 3. 强制重新加载 Excel 数据
         self.personnel_manager.load_data()
@@ -322,11 +323,11 @@ class RandomSelectorUI:
         """菜单处理：手动检查更新"""
         check_for_updates(
             e.page, silent_on_latest=False,
-            on_result=self._on_update_check_result,
-            on_download_requested=self._on_download_button_click,
+            on_result=self.on_update_check_result,
+            on_download_requested=self.on_download_button_click,
         )
 
-    def _on_update_check_result(self, status: str, version: str | None):
+    def on_update_check_result(self, status: str, version: str | None):
         """更新检查结果回调：更新窗口标题栏状态文字"""
         if self._update_status_text is None:
             return
@@ -401,7 +402,7 @@ class RandomSelectorUI:
         self._download_progress_container = container
         return container
 
-    def _on_download_button_click(self, version: str):
+    def on_download_button_click(self, version: str):
         """用户点击"后台下载"按钮后，启动下载"""
         import os as _os
         from pathlib import Path as _Path
@@ -523,9 +524,9 @@ class RandomSelectorUI:
     def _on_open_installer_click(self, e):
         """用户点击"打开安装包"按钮后，启动安装程序并退出当前进程"""
         if self._downloaded_file_path:
-            import subprocess as _sp
+            import os as _os
             import sys as _sys
-            _sp.Popen([self._downloaded_file_path], shell=True)
+            _os.startfile(self._downloaded_file_path)
             e.page.window_destroy()
             _sys.exit(0)
 
@@ -538,7 +539,7 @@ class RandomSelectorUI:
         """用户点击"重试"按钮，使用同一版本重新下载"""
         version = self._downloaded_version
         if version:
-            self._on_download_button_click(version)
+            self.on_download_button_click(version)
 
     def _on_pause_download_click(self, _e):
         """用户点击"暂停"/"继续下载"按钮"""
@@ -615,7 +616,7 @@ class RandomSelectorUI:
                 bgcolor=COLOR_SUCCESS_BG,
                 padding=10,
                 border_radius=5,
-                margin=ft.Margin(top=0, bottom=10, left=0, right=0),
+                margin=ft.margin.only(top=0, bottom=10, left=0, right=0),
             ),
         )
         self.result_area.update()
@@ -631,7 +632,7 @@ class RandomSelectorUI:
                 bgcolor=COLOR_ERROR_BG,
                 padding=10,
                 border_radius=5,
-                margin=ft.Margin(top=0, bottom=10, left=0, right=0),
+                margin=ft.margin.only(top=0, bottom=10, left=0, right=0),
             ),
         )
         self.result_area.update()
@@ -667,7 +668,8 @@ class RandomSelectorUI:
         self._clear_selection_context()
         self._refresh_status()
 
-    def _on_md_file_picked(self, e: ft.FilePickerResultEvent):
+    @staticmethod
+    def _on_md_file_picked(e: ft.FilePickerResultEvent):
         if e.files is None or len(e.files) == 0:
             return
         from dialogs import show_md_viewer_dialog
@@ -766,8 +768,8 @@ class RandomSelectorUI:
             ], spacing=8),
             bgcolor=COLOR_WARNING_BG,
             border_radius=6,
-            padding=ft.Padding(top=8, bottom=8, left=12, right=12),
-            margin=ft.Margin(top=0, bottom=4, left=0, right=0),
+            padding=ft.padding.only(top=8, bottom=8, left=12, right=12),
+            margin=ft.margin.only(top=0, bottom=4, left=0, right=0),
             visible=False,
         )
 
@@ -1054,9 +1056,9 @@ class RandomSelectorUI:
         unselected_count = len(self.personnel_manager.get_unselected_personnel())
 
         if unselected_count >= MOPPING_COUNT:
-            self._mopping_select_n(MOPPING_COUNT, unselected_count - MOPPING_COUNT)
+            self._mopping_select_n(MOPPING_COUNT)
         elif unselected_count > 0:
-            self._mopping_select_n(unselected_count, 0)
+            self._mopping_select_n(unselected_count)
         else:
             self.result_area.controls.append(
                 ft.Container(
@@ -1072,7 +1074,7 @@ class RandomSelectorUI:
         if self.main_column is not None:
             self.main_column.scroll_to(key="backtrack_panel", duration=300)
 
-    def _mopping_select_n(self, n: int, remaining: int):
+    def _mopping_select_n(self, n: int):
         """从可选人员中随机选 n 人，标记已选并保存"""
         unselected_df = self.personnel_manager.get_unselected_personnel()
         unselected_df = self._filter_out_backtracked(unselected_df)
@@ -1105,7 +1107,7 @@ class RandomSelectorUI:
                     bgcolor=COLOR_SUCCESS_BG,
                     padding=10,
                     border_radius=5,
-                    margin=ft.Margin(top=10, bottom=0, left=0, right=0),
+                    margin=ft.margin.only(top=10, bottom=0, left=0, right=0),
                 )
             )
         else:
@@ -1115,7 +1117,7 @@ class RandomSelectorUI:
                     bgcolor=COLOR_WARNING_BG,
                     padding=10,
                     border_radius=5,
-                    margin=ft.Margin(top=10, bottom=0, left=0, right=0),
+                    margin=ft.margin.only(top=10, bottom=0, left=0, right=0),
                 )
             )
 
@@ -1368,7 +1370,7 @@ class RandomSelectorUI:
             table.update()
             if self.main_column is not None and scroll_target is not None:
                 self.main_column.scroll_to(key=scroll_target, duration=200)
-            time.sleep(ANIMATION_DELAY)
+            threading.Event().wait(ANIMATION_DELAY)
 
         if table.rows:
             last = len(table.rows) - 1
@@ -1402,8 +1404,8 @@ class RandomSelectorUI:
             ),
             bgcolor=COLOR_LIGHT_BG,
             border_radius=12,
-            padding=ft.Padding(top=20, bottom=20, left=20, right=20),
-            margin=ft.Margin(top=0, bottom=16, left=0, right=0),
+            padding=ft.padding.only(top=20, bottom=20, left=20, right=20),
+            margin=ft.margin.only(top=0, bottom=16, left=0, right=0),
             alignment=ft.alignment.center,
         )
 
@@ -1417,7 +1419,7 @@ class RandomSelectorUI:
             result_cards.append(
                 ft.Container(
                     ft.Text(HINT_TEMP_NOT_SAVED, color=COLOR_HINT),
-                    margin=ft.Margin(top=0, bottom=10, left=0, right=0),
+                    margin=ft.margin.only(top=0, bottom=10, left=0, right=0),
                 )
             )
 
@@ -1439,7 +1441,7 @@ class RandomSelectorUI:
                 table_row = ft.Row([table], scroll=ft.ScrollMode.AUTO, key="sel_table")
                 result_cards.append(table_row)
                 self.result_area.controls.extend(result_cards)
-                self.result_area.page.update()
+                self.result_area.update()
 
                 if animate:
                     self._animate_table_fill(
@@ -1478,7 +1480,7 @@ class RandomSelectorUI:
                 )
                 result_cards.append(split_row)
                 self.result_area.controls.extend(result_cards)
-                self.result_area.page.update()
+                self.result_area.update()
 
                 if animate:
                     self._animate_table_fill(
@@ -1539,11 +1541,11 @@ class RandomSelectorUI:
         self.result_area.controls.extend([
             ft.Container(
                 ft.Text(f"已重置 {selected_count} 名人员的选择状态"),
-                margin=ft.Margin(top=5, bottom=0, left=0, right=0),
+                margin=ft.margin.only(top=5, bottom=0, left=0, right=0),
             ),
             ft.Container(
                 ft.Text("现在所有人员都可以被重新选择"),
-                margin=ft.Margin(top=5, bottom=0, left=0, right=0),
+                margin=ft.margin.only(top=5, bottom=0, left=0, right=0),
             ),
         ])
         self.result_area.update()
@@ -1622,7 +1624,7 @@ class RandomSelectorUI:
                     bgcolor=COLOR_INFO_BG,
                     padding=10,
                     border_radius=5,
-                    margin=ft.Margin(top=10, bottom=0, left=0, right=0),
+                    margin=ft.margin.only(top=10, bottom=0, left=0, right=0),
                 ),
             ])
         else:
@@ -1650,7 +1652,7 @@ class RandomSelectorUI:
                     bgcolor=COLOR_INFO_BG,
                     padding=10,
                     border_radius=5,
-                    margin=ft.Margin(top=10, bottom=0, left=0, right=0),
+                    margin=ft.margin.only(top=10, bottom=0, left=0, right=0),
                 ),
             ])
 

@@ -43,17 +43,16 @@ def bootstrap():
     if src_docs.exists():
         dest_docs.mkdir(parents=True, exist_ok=True)
         for item in src_docs.iterdir():
-            _copy_if_missing(item.name, item, dest_docs / item.name)
+            _copy_if_missing(item, dest_docs / item.name)
 
     # 复制默认 Excel 文件
     _copy_if_missing(
-        "DefaultList.xlsx",
         RESOURCE_DIR / "config" / "data" / "DefaultList.xlsx",
         DEFAULT_EXCEL_FILE,
     )
 
 
-def _copy_if_missing(name: str, src: Path, dest: Path):
+def _copy_if_missing(src: Path, dest: Path):
     """如果目标文件不存在且源文件存在，则复制"""
     if not dest.exists() and src.exists():
         try:

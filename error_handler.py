@@ -221,7 +221,7 @@ def _show_error_dialog(exc_type, exc_value, log_path: Path | None) -> None:
                         border=ft.border.all(1, "#e0e0e0"),
                         border_radius=8,
                         padding=12,
-                        margin=ft.Margin(top=8, bottom=0, left=0, right=0),
+                        margin=ft.margin.only(top=8, bottom=0, left=0, right=0),
                     ),
                 ],
                 scroll=ft.ScrollMode.AUTO,
