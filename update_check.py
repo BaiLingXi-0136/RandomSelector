@@ -26,6 +26,9 @@ from constants import (
     COLOR_ERROR_BG, COLOR_INFO_BG, COLOR_SUCCESS_BG,
     COLOR_SUBTLE, GITHUB_RELEASES_URL,
 )
+from logger import get_logger
+
+_log = get_logger(__name__)
 
 # 回调类型：on_result(status, version)
 # status: "latest" | "update_available" | "error"
@@ -270,6 +273,7 @@ def _do_check(page: ft.Page, silent_on_latest: bool,
         page.close(loading_dialog)
 
     if remote_version is None:
+        _log.warning("更新检查失败：无法连接到服务器")
         if not silent_on_latest:
             _show_check_failed_dialog(page, UPDATE_MSG_NETWORK_ERROR)
         if on_result:
@@ -280,6 +284,7 @@ def _do_check(page: ft.Page, silent_on_latest: bool,
     local_tuple = _parse_version(APP_VERSION)
 
     if not remote_tuple or not local_tuple:
+        _log.warning("更新检查失败：无法解析版本号")
         if not silent_on_latest:
             _show_check_failed_dialog(page, UPDATE_MSG_PARSE_ERROR)
         if on_result:
@@ -287,6 +292,7 @@ def _do_check(page: ft.Page, silent_on_latest: bool,
         return
 
     if remote_tuple > local_tuple:
+        _log.info(f"发现新版本: v{remote_version} (当前 v{APP_VERSION})")
         _show_update_available_dialog(
             page, remote_version,
             on_download=(
@@ -296,6 +302,7 @@ def _do_check(page: ft.Page, silent_on_latest: bool,
         if on_result:
             on_result("update_available", remote_version)
     else:
+        _log.info(f"已是最新版本: v{APP_VERSION}")
         if not silent_on_latest:
             _show_already_latest_dialog(page)
         if on_result:

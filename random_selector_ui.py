@@ -24,12 +24,13 @@ from constants import (
     BTN_RESUME_DOWNLOAD, BTN_RETRY_DOWNLOAD, BTN_OPEN_INSTALLER,
     MENU_FILE, MENU_EDIT, MENU_VIEW, MENU_TOOLS, MENU_HELP, MENU_CHECK_UPDATE,
     WARN_FILE_LOCKED, WARN_FILE_LOCKED_SELECTION,
-    WARN_LOAD_FAILED, WARN_EMPTY_LIST, WARN_ALL_SELECTED, WARN_NO_EXPORT_DATA,
+    WARN_LOAD_FAILED, WARN_EMPTY_LIST, WARN_ALL_SELECTED,
     HINT_TEMP_NOT_SAVED, HINT_BACKTRACK_USAGE, TEST_ERROR_MESSAGE,
     DOWNLOAD_STATUS_PREPARING, DOWNLOAD_STATUS_DOWNLOADING,
     DOWNLOAD_STATUS_COMPLETED, DOWNLOAD_PROGRESS_KNOWN_SIZE, DOWNLOAD_PROGRESS_UNKNOWN_SIZE,
     DOWNLOAD_SPEED_MB, DOWNLOAD_SPEED_KB, DOWNLOAD_ETA,
 )
+from logger import get_logger
 from dialogs import (
     on_menu_about, on_menu_help,
     show_options_dialog, show_clear_records_confirm, show_mopping_redo_confirm,
@@ -62,6 +63,7 @@ class RandomSelectorUI:
     """随机点名系统主界面"""
 
     def __init__(self):
+        self.log = get_logger(__name__)
         self.personnel_manager = PersonnelManager()
         self.result_area: ft.Column | None = None
         self.current_mode = "temporary"
@@ -231,9 +233,6 @@ class RandomSelectorUI:
                 ft.SubmenuButton(
                     content=ft.Text(MENU_TOOLS),
                     controls=[
-                        menu_item("导出结果...", "",
-                                  icon=ft.Icon(ft.Icons.SAVE_ALT),
-                                  on_click=self._on_export_results),
                         menu_item(MENU_CHECK_UPDATE, "",
                                   icon=ft.Icon(ft.Icons.UPDATE),
                                   on_click=self._on_check_update),
@@ -318,6 +317,11 @@ class RandomSelectorUI:
             "auto_check_update": auto_check,
             "download_path": download_path,
         })
+        seed_status = f"固定({value})" if enabled else "随机"
+        self.log.info(
+            f"配置变更: 种子={seed_status} | 自动更新={'开启' if auto_check else '关闭'}"
+            f"{' | 下载路径=' + download_path if download_path else ''}"
+        )
 
     def _on_check_update(self, e):
         """菜单处理：手动检查更新"""
@@ -334,13 +338,16 @@ class RandomSelectorUI:
         if status == "latest":
             self._update_status_text.value = "✓ 已是最新版本"
             self._update_status_text.color = COLOR_SUCCESS_TEXT
+            self.log.info(f"检查更新: 当前 v{APP_VERSION} 已是最新版本")
         elif status == "update_available":
             self._update_status_text.value = f"⬆ 新版本 v{version} 可用"
             self._update_status_text.color = COLOR_WARNING
             self._downloaded_version = version  # 暂存以备下载
+            self.log.info(f"检查更新: 当前 v{APP_VERSION} → 发现新版本 v{version}")
         elif status == "error":
             self._update_status_text.value = "⚠ 检查更新失败"
             self._update_status_text.color = COLOR_DANGER
+            self.log.warning("检查更新失败：网络连接异常")
         self._update_status_text.update()
 
     # ==================== 后台下载 ====================
@@ -442,6 +449,7 @@ class RandomSelectorUI:
             on_complete=self._on_download_complete,
             on_error=self._on_download_error,
         )
+        self.log.info(f"开始下载: RandomSelector_v{version}_Setup.exe → {downloads_dir}")
 
     def _on_download_progress(self, bytes_done: int, total: int, filename: str,
                               speed: float, eta: float):
@@ -503,6 +511,13 @@ class RandomSelectorUI:
         self._btn_retry_download.visible = False
         self._download_progress_container.update()
 
+        # 文件大小
+        try:
+            size_mb = Path(file_path).stat().st_size / (1024 * 1024)
+            self.log.info(f"下载完成: {filename} ({size_mb:.1f} MB) → {file_path}")
+        except Exception:
+            self.log.info(f"下载完成: {filename} → {file_path}")
+
         # 更新标题行状态文字
         version = self._downloaded_version or ""
         self._update_status_text.value = f"✓ 新版本已下载: v{version}"
@@ -511,6 +526,7 @@ class RandomSelectorUI:
 
     def _on_download_error(self, message: str):
         """下载失败回调（从后台线程调用）"""
+        self.log.warning(f"下载失败: {message}")
         self._download_status_text.value = "下载失败"
         self._download_percent_text.value = message
         self._download_percent_text.color = COLOR_DANGER
@@ -559,68 +575,6 @@ class RandomSelectorUI:
             self._download_status_text.value = "下载已暂停"
         self._download_progress_container.update()
 
-    # ==================== 导出结果 ====================
-
-    def _on_export_results(self, _e):
-        if self._last_selected_rows is None or self._last_selected_rows.empty:
-            self._show_result_error(WARN_NO_EXPORT_DATA)
-            return
-
-        export_dir = DATA_DIR / "exports"
-        export_dir.mkdir(parents=True, exist_ok=True)
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_name = f"抽选结果_{timestamp}.txt"
-        file_path = export_dir / file_name
-
-        mode_label = "拖地模式" if self._last_mode == "mopping" else "临时模式"
-        seed_info = str(self._last_effective_seed) if self._last_effective_seed is not None else "未知"
-        lines = [
-            "=" * 40,
-            f"{APP_TITLE} - 抽选结果",
-            "=" * 40,
-            "",
-            f"导出时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"抽选模式：{mode_label}",
-            f"选中人数：{len(self._last_selected_rows)}",
-            f"随机种子：{seed_info}",
-            "",
-            "-" * 40,
-            "选中人员列表",
-            "-" * 40,
-            "",
-        ]
-        for i, (_, row) in enumerate(self._last_selected_rows.iterrows(), 1):
-            lines.append(
-                f"{i:>3}. {safe_val(row['姓名'])}  "
-                f"学号：{safe_val(row['学号'])}  "
-                f"班级：{safe_val(row['班级'])}  "
-                f"性别：{safe_val(row['性别'])}"
-            )
-        lines.extend(["", "=" * 40])
-
-        try:
-            file_path.write_text("\n".join(lines), encoding="utf-8")
-        except OSError:
-            self._show_result_error(f"导出失败：无法写入文件 {file_name}")
-            return
-
-        self._remove_result_errors()
-        self.result_area.controls.insert(
-            0,
-            ft.Container(
-                ft.Text(
-                    f"导出成功！文件已保存至：config/data/exports/{file_name}",
-                    weight=ft.FontWeight.BOLD,
-                ),
-                bgcolor=COLOR_SUCCESS_BG,
-                padding=10,
-                border_radius=5,
-                margin=ft.margin.only(top=0, bottom=10, left=0, right=0),
-            ),
-        )
-        self.result_area.update()
-
     # ==================== 错误提示 ====================
 
     def _show_result_error(self, message: str):
@@ -653,6 +607,8 @@ class RandomSelectorUI:
 
         new_path = Path(e.files[0].path)
         self.personnel_manager.set_file_path(new_path)
+
+        self.log.info(f"切换数据文件: {new_path}")
 
         self.result_area.controls.clear()
         self.result_area.controls.append(
@@ -882,18 +838,22 @@ class RandomSelectorUI:
         """安全保存：捕获文件占用异常，触发锁定警告。返回 True 表示保存成功。"""
         try:
             self.personnel_manager.save_data()
+            self.log.info(f"数据已保存: {self.personnel_manager.file_path}")
             return True
         except (PermissionError, OSError):
+            self.log.warning(f"保存失败：文件被占用 - {self.personnel_manager.file_path}")
             self._handle_file_locked()
             return False
 
     def _handle_file_locked(self):
         """文件被占用时：显示警告并禁用拖地模式"""
+        self.log.warning(f"文件被占用: {self.personnel_manager.file_path}")
         self._update_lock_warning(True)
         self._disable_mopping_mode()
 
     def _handle_file_unlocked(self):
         """文件恢复可写时：隐藏警告并恢复拖地模式"""
+        self.log.info(f"文件已解锁: {self.personnel_manager.file_path}")
         self._update_lock_warning(False)
         self._enable_mopping_mode()
 
@@ -941,6 +901,7 @@ class RandomSelectorUI:
         self.result_area.controls.clear()
 
         if self._is_file_locked and self.current_mode == "mopping":
+            self.log.warning("文件被占用，拖地模式已禁用")
             self.result_area.controls.append(
                 ft.Container(
                     ft.Text(WARN_FILE_LOCKED_SELECTION),
@@ -981,6 +942,7 @@ class RandomSelectorUI:
         all_personnel = self.personnel_manager.get_all_personnel()
         all_personnel = self._filter_out_backtracked(all_personnel)
         if all_personnel.empty:
+            self.log.warning("临时抽选失败：人员名单为空")
             self.result_area.controls.append(
                 ft.Container(
                     ft.Text(WARN_EMPTY_LIST),
@@ -995,6 +957,12 @@ class RandomSelectorUI:
         actual_count = min(count, len(all_personnel))
         selected_rows = all_personnel.sample(n=actual_count, random_state=self._random_state)
 
+        seed_label = "固定" if self._seed_enabled else "自动"
+        self.log.info(
+            "──────── 开始临时抽选 ────────\n"
+            f"目标人数: {actual_count} | 可用人数: {len(all_personnel)} | 种子: {self._effective_seed} ({seed_label})"
+        )
+
         self.display_selection_result(
             selected_rows, f"临时模式 - 已选择{actual_count}名人员", False
         )
@@ -1004,6 +972,15 @@ class RandomSelectorUI:
         self.result_area.update()
         if self.main_column is not None:
             self.main_column.scroll_to(key="backtrack_panel", duration=300)
+
+        # 日志：记录抽选结果
+        self.log.info(f"结果 ({actual_count}人):")
+        for i, (_, row) in enumerate(selected_rows.iterrows(), 1):
+            self.log.info(
+                f"  {i}. {safe_val(row['姓名'])} | {safe_val(row['学号'])} | "
+                f"{safe_val(row['班级'])} | {safe_val(row['性别'])}"
+            )
+        self.log.info("──────── 临时抽选结束 ────────")
 
     # ==================== 拖地模式 ====================
 
@@ -1027,6 +1004,7 @@ class RandomSelectorUI:
         return mask.any()
 
     def _do_mopping_redo(self):
+        self.log.warning("拖地重抽：当日已抽选，确认清除最近3条记录并重新抽选")
         self._effective_seed = None  # 重抽时重新确定种子
         if not self.personnel_manager.load_data():
             return
@@ -1079,6 +1057,7 @@ class RandomSelectorUI:
         unselected_df = self.personnel_manager.get_unselected_personnel()
         unselected_df = self._filter_out_backtracked(unselected_df)
         if unselected_df.empty:
+            self.log.warning("拖地抽选失败：所有人员都已被选择")
             self.result_area.controls.append(
                 ft.Container(
                     ft.Text(WARN_ALL_SELECTED),
@@ -1092,11 +1071,28 @@ class RandomSelectorUI:
         actual_n = min(n, len(unselected_df))
         selected_rows = unselected_df.sample(n=actual_n, random_state=self._random_state)
 
+        seed_label = "固定" if self._seed_enabled else "自动"
+        self.log.info(
+            "──────── 开始拖地抽选 ────────\n"
+            f"目标人数: {actual_n} | 可用人数: {len(unselected_df)} | 种子: {self._effective_seed} ({seed_label})"
+        )
+
         self.personnel_manager.update_selection_status(selected_rows.index, selected=True)
-        self._safe_save()
+        saved = self._safe_save()
 
         title = f"拖地模式 - 已选择{actual_n}名人员"
         self.display_selection_result(selected_rows, title, True)
+
+        # 日志：记录抽选结果
+        self.log.info(f"结果 ({actual_n}人):")
+        for i, (_, row) in enumerate(selected_rows.iterrows(), 1):
+            self.log.info(
+                f"  {i}. {safe_val(row['姓名'])} | {safe_val(row['学号'])} | "
+                f"{safe_val(row['班级'])} | {safe_val(row['性别'])}"
+            )
+        if saved:
+            self.log.info("状态已写入 Excel")
+        self.log.info("──────── 拖地抽选结束 ────────")
 
         # 显示剩余人数提示（基于过滤后的实际可用人数）
         actual_remaining = len(unselected_df) - actual_n
@@ -1302,6 +1298,12 @@ class RandomSelectorUI:
         replacement = pool.sample(n=1, random_state=backtrack_seed)
         replacement_idx = replacement.index[0]
         replacement_name = safe_val(replacement.iloc[0]['姓名'])
+        replacement_id = safe_val(replacement.iloc[0]['学号'])
+
+        self.log.info(
+            f"回溯替换: 学号 {student_id}({person_name}) → "
+            f"学号 {replacement_id}({replacement_name})"
+        )
 
         if self._last_mode == "mopping":
             self.personnel_manager.update_selection_status([replacement_idx], selected=True)
@@ -1528,6 +1530,8 @@ class RandomSelectorUI:
 
         self.personnel_manager.clear_selection_records()
         self.personnel_manager.save_data()
+
+        self.log.warning(f"清空全部选择记录 ({selected_count}人 → 0人)")
 
         self.result_area.controls.clear()
         self.result_area.controls.append(

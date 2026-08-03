@@ -1,14 +1,35 @@
 """程序入口"""
+import atexit
 import sys
+import time
 import ctypes
 import flet as ft
 from config import bootstrap, RESOURCE_DIR, load_settings, save_settings
 from constants import APP_TITLE, APP_VERSION, FONT_FAMILY, MUTEX_NAME, WINDOW_WIDTH, WINDOW_HEIGHT
 from error_handler import setup_error_handler
+from logger import setup_logging, get_logger
 from random_selector_ui import RandomSelectorUI
 from dialogs import open_help_dialog
 
+_start_time = time.time()
+
 _mutex_handle = None  # 保持句柄引用，防止被 GC 回收导致互斥体提前释放
+
+
+def _exit_handler():
+    """注册为 atexit 回调，记录退出日志。"""
+    elapsed = time.time() - _start_time
+    minutes = int(elapsed // 60)
+    seconds = int(elapsed % 60)
+    if minutes > 0:
+        duration = f"{minutes}分{seconds}秒"
+    else:
+        duration = f"{seconds}秒"
+    try:
+        log = get_logger("APP")
+        log.info(f"应用退出 (运行时长: {duration})")
+    except Exception:
+        pass
 
 
 # noinspection PyUnresolvedReferences
@@ -32,8 +53,15 @@ def _ensure_single_instance() -> bool:
 # noinspection unresolved-references
 def main(page: ft.Page):
     """主函数"""
+    setup_logging()
+    log = get_logger(__name__)
     bootstrap()
     setup_error_handler(page)
+
+    log.info("=" * 40)
+    log.info(f"{APP_TITLE} v{APP_VERSION} 启动")
+    log.info(f"数据目录: {RESOURCE_DIR}")
+    log.info("=" * 40)
 
     page.title = f"{APP_TITLE} v{APP_VERSION}"
     page.theme_mode = ft.ThemeMode.LIGHT
@@ -125,6 +153,8 @@ def main(page: ft.Page):
 
 
 if __name__ == "__main__":
+    atexit.register(_exit_handler)
     if not _ensure_single_instance():
+        print("RandomSelector is already running. Exiting.")
         sys.exit(0)
     ft.app(target=main)

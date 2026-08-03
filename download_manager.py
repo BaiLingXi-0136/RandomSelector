@@ -27,6 +27,9 @@ from constants import (
     DOWNLOAD_ERROR_URL_RESOLVE,
     DOWNLOAD_STATUS_CANCELLED,
 )
+from logger import get_logger
+
+_log = get_logger(__name__)
 
 # ==================== 配置 ====================
 

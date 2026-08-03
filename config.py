@@ -28,6 +28,7 @@ RESOURCE_DIR = get_resource_path()
 
 CONFIG_DIR = BASE_DIR / "config"
 DATA_DIR = CONFIG_DIR / "data"
+LOG_DIR = CONFIG_DIR / "logs"
 DEFAULT_EXCEL_FILE = DATA_DIR / "DefaultList.xlsx"
 SETTINGS_FILE = CONFIG_DIR / "settings.json"
 

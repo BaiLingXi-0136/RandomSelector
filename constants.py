@@ -6,7 +6,7 @@ APP_VERSION = "4.5.1"
 MUTEX_NAME = r"Local\RandomSelector_v4"
 
 # ==================== 数值限制 ====================
-MAX_LOG_FILES = 20            # 错误日志文件最大保留数量
+MAX_LOG_FILES = 30            # 错误日志文件最大保留数量
 MAX_SELECTION_COUNT = 20
 MIN_SELECTION_COUNT = 1
 MOPPING_COUNT = 3            # 拖地模式默认选择人数
@@ -90,7 +90,6 @@ WARN_FILE_LOCKED = (
 WARN_FILE_LOCKED_SELECTION = (
     "文件被占用，无法使用拖地模式！请关闭其他程序中打开的名单文件后重启程序。"
 )
-WARN_NO_EXPORT_DATA = "没有可导出的抽选结果，请先进行一次选择"
 WARN_LOAD_FAILED = "错误：无法加载数据文件"
 WARN_EMPTY_LIST = "人员名单为空！"
 WARN_ALL_SELECTED = "所有人员都已被选择过！"

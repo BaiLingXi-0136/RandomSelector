@@ -20,14 +20,14 @@ from pathlib import Path
 
 import flet as ft
 
-from config import BASE_DIR
+from config import LOG_DIR
 from constants import (
     BTN_CONFIRM, COLOR_DANGER, COLOR_ERROR_BG,
     FONT_SIZE_SMALL, FONT_SIZE_BODY, MAX_LOG_FILES,
 )
 
 # ---------- 日志目录 ----------
-LOG_DIR = BASE_DIR / "config" / "logs"
+# LOG_DIR 已从 config 导入，此处保留兼容
 
 # 保存 page 引用
 _page_ref: ft.Page | None = None
@@ -111,7 +111,7 @@ def _exception_hook(exc_type, exc_value, exc_tb):
 # ---------------------------------------------------------------------------
 
 def _write_exception_log(exc_type, exc_value, exc_tb) -> Path | None:
-    """将异常 Traceback 写入带时间戳的日志文件。"""
+    """将异常 Traceback 写入带时间戳的日志文件，同时写入主日志。"""
     try:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -131,6 +131,17 @@ def _write_exception_log(exc_type, exc_value, exc_tb) -> Path | None:
         )
 
         log_path.write_text(content, encoding="utf-8")
+
+        # 同时写入主日志
+        try:
+            import logging
+            err_logger = logging.getLogger("ERROR")
+            err_logger.error(
+                f"未捕获异常: {exc_type.__name__} - {exc_value}\n{full_tb.strip()}"
+            )
+        except Exception:
+            pass
+
         _cleanup_old_logs()
         return log_path
     except Exception:
@@ -138,11 +149,21 @@ def _write_exception_log(exc_type, exc_value, exc_tb) -> Path | None:
 
 
 def _cleanup_old_logs() -> None:
-    """删除超出数量限制的旧错误日志。"""
+    """删除超出数量限制的旧错误日志和应用日志。"""
     try:
-        log_files = sorted(LOG_DIR.glob("error_*.log"), key=lambda p: p.stat().st_mtime)
-        while len(log_files) > MAX_LOG_FILES:
-            oldest = log_files.pop(0)
+        # 清理旧的独立错误日志文件
+        error_logs = sorted(LOG_DIR.glob("error_*.log"), key=lambda p: p.stat().st_mtime)
+        while len(error_logs) > MAX_LOG_FILES:
+            oldest = error_logs.pop(0)
+            oldest.unlink(missing_ok=True)
+
+        # 清理旧的按天应用日志（app_*.log 和 app.log.2026-08-03 格式）
+        app_logs = sorted(
+            [p for p in LOG_DIR.glob("app*") if p.suffix in (".log", "") or ".log." in p.name],
+            key=lambda p: p.stat().st_mtime,
+        )
+        while len(app_logs) > MAX_LOG_FILES:
+            oldest = app_logs.pop(0)
             oldest.unlink(missing_ok=True)
     except Exception:
         pass

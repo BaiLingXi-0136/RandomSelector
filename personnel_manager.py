@@ -3,6 +3,9 @@ import pandas as pd
 from datetime import datetime
 from pathlib import Path
 from config import get_data_file_path, save_settings
+from logger import get_logger
+
+_log = get_logger(__name__)
 
 
 class PersonnelManager:
@@ -15,6 +18,7 @@ class PersonnelManager:
         self.file_path = Path(path)
         self.df = None
         save_settings({"data_file": str(self.file_path.resolve())})
+        _log.info(f"数据文件已切换: {self.file_path}")
 
     @property
     def file_name(self) -> str:
@@ -25,9 +29,11 @@ class PersonnelManager:
         """加载人员数据"""
         try:
             if not self.file_path.exists():
+                _log.warning(f"数据文件不存在: {self.file_path}")
                 return False
             self.df = pd.read_excel(self.file_path)
             if self.df.empty:
+                _log.warning(f"数据文件为空: {self.file_path}")
                 return False
             # 确保选择标记列存在
             if '是否已选' not in self.df.columns:
@@ -36,8 +42,12 @@ class PersonnelManager:
             if '选择时间' not in self.df.columns:
                 self.df['选择时间'] = ''
             self.df['选择时间'] = self.df['选择时间'].fillna('').astype(str).replace('nan', '')
+            total = len(self.df)
+            selected = (self.df['是否已选'] == '是').sum()
+            _log.info(f"加载数据文件: {self.file_path} ({total}人, 已选{selected}人, 未选{total - selected}人)")
             return True
-        except Exception:
+        except Exception as e:
+            _log.error(f"加载数据失败: {self.file_path} - {e}")
             return False
 
     def get_unselected_personnel(self) -> pd.DataFrame:
