@@ -2,5 +2,6 @@
   "first_run": true,
   "seed_enabled": false,
   "seed_value": 1589564,
-  "auto_check_update": true
+  "auto_check_update": true,
+  "debug_log_enabled": false
 }

@@ -2,7 +2,7 @@
 
 # ==================== 应用元信息 ====================
 APP_TITLE = "随机点名系统"
-APP_VERSION = "4.5.1"
+APP_VERSION = "4.5.2"
 MUTEX_NAME = r"Local\RandomSelector_v4"
 
 # ==================== 数值限制 ====================
@@ -106,6 +106,7 @@ UPDATE_MSG_LATEST = "当前已是最新版本 v{version}。"
 UPDATE_MSG_NETWORK_ERROR = "无法连接到更新服务器，请检查网络连接后重试。\n\n如多次失败，可尝试使用网络加速器。"
 UPDATE_MSG_PARSE_ERROR = "无法解析远程版本信息，请稍后重试。"
 UPDATE_OPTION_AUTO_CHECK = "启动时自动检查更新"
+OPTION_DEBUG_LOG = "启用调试日志（非必要时不建议启用）"
 GITHUB_REPO_URL = "https://github.com/BaiLingXi-0136/RandomSelector"
 GITHUB_RELEASES_URL = GITHUB_REPO_URL + "/releases"
 GITHUB_ISSUES_URL = GITHUB_REPO_URL + "/issues"

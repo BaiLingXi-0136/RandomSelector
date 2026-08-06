@@ -10,7 +10,7 @@ from config import BASE_DIR, RESOURCE_DIR
 from constants import (
     BTN_CANCEL, BTN_CONFIRM, COLOR_HINT, COLOR_SUBTLE,
     FONT_SIZE_HINT, GITHUB_ISSUES_URL, HINT_SEED, SEED_INPUT_WIDTH,
-    UPDATE_OPTION_AUTO_CHECK,
+    UPDATE_OPTION_AUTO_CHECK, OPTION_DEBUG_LOG,
 )
 
 
@@ -136,13 +136,19 @@ def show_options_dialog(
     seed_value: int,
     auto_check_update: bool,
     download_path: str,
-    on_save: Callable[[bool, int, bool, str], None],
+    debug_log_enabled: bool,
+    on_save: Callable[[bool, int, bool, str, bool], None],
 ):
     """打开选项配置对话框，用户确认后通过 on_save 回调保存"""
 
     auto_check_checkbox = ft.Checkbox(
         label=UPDATE_OPTION_AUTO_CHECK,
         value=auto_check_update,
+    )
+
+    debug_log_checkbox = ft.Checkbox(
+        label=OPTION_DEBUG_LOG,
+        value=debug_log_enabled,
     )
 
     seed_checkbox = ft.Checkbox(
@@ -199,6 +205,7 @@ def show_options_dialog(
         on_save(
             seed_checkbox.value, val, auto_check_checkbox.value,
             download_path_text.value if download_path_text.value != "默认（Downloads 文件夹）" else "",
+            debug_log_checkbox.value,
         )
 
     def on_cancel(_e):
@@ -209,6 +216,7 @@ def show_options_dialog(
         content=ft.Column(
             [
                 auto_check_checkbox,
+                debug_log_checkbox,
                 ft.Divider(height=1, color=COLOR_HINT),
                 ft.Text("后台下载路径：", weight=ft.FontWeight.BOLD),
                 ft.Row([

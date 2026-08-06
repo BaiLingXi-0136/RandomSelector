@@ -23,7 +23,7 @@
 | 属性     | 说明                                                |
 |--------|-----------------------------------------------------|
 | 项目名称   | 随机点名系统 (RandomSelector)                       |
-| 当前版本   | `4.5.1`（定义于 `constants.py:5`）                  |
+| 当前版本   | `4.5.2`（定义于 `constants.py:5`）                  |
 | 技术栈    | Python 3.8+ / Flet (Flutter) / pandas / PyInstaller |
 | 目标平台   | Windows 桌面                                        |
 | GUI 框架 | Flet ≥ 0.21.0（基于 Flutter 的 Python 绑定）        |
@@ -34,30 +34,32 @@
 
 ```
 version4.0/
-├── main.py                    # 入口：单实例互斥体 → Flet app 启动
-├── config.py                  # 路径抽象层：BASE_DIR / RESOURCE_DIR 双轨制
-├── constants.py               # 所有常量：颜色、字体、尺寸、标签、限制值
-├── random_selector_ui.py      # 主界面 RandomSelectorUI（~1557 行），UI + 业务逻辑
-├── error_handler.py           # 全局异常捕获：monkey-patch + excepthook 兜底
-├── dialogs.py                 # AlertDialog 工厂函数（关于、帮助、选项、确认）
-├── ui_helpers.py              # DataTable / 菜单项 / 分栏表格构建器
-├── file_monitor.py            # FileLockMonitor：后台线程轮询文件可写性
-├── personnel_manager.py       # PersonnelManager：pandas Excel 读写 + 选中状态 CRUD
-├── update_check.py            # GitHub 版本检测：纯标准库 + DNS 劫持回退（~145 行）
-├── download_manager.py        # 后台下载管理器：暂停/续传/断点恢复/文件验证（~650 行）
-├── build.py                   # PyInstaller 打包脚本（版本号自动从 constants 读取）
+├── main.py                    # 入口：单实例互斥体 → Flet app 启动（~160 行）
+├── config.py                  # 路径抽象层：BASE_DIR / RESOURCE_DIR 双轨制（~94 行）
+├── constants.py               # 所有常量：颜色、字体、尺寸、标签、限制值（~137 行）
+├── random_selector_ui.py      # 主界面 RandomSelectorUI（~1764 行），UI + 全部业务逻辑
+├── error_handler.py           # 全局异常捕获：monkey-patch + excepthook 兜底（~271 行）
+├── logger.py                  # 统一日志模块：按天滚动、固定宽度格式、DEBUG/INFO 双通道（~164 行）
+├── dialogs.py                 # AlertDialog 工厂函数（关于、帮助、选项、确认）（~310 行）
+├── ui_helpers.py              # DataTable / 菜单项 / 分栏表格构建器（~150 行）
+├── file_monitor.py            # FileLockMonitor：后台线程轮询文件可写性（~106 行）
+├── personnel_manager.py       # PersonnelManager：pandas Excel 读写 + 选中状态 CRUD（~82 行）
+├── update_check.py            # GitHub 版本检测：纯标准库 + DNS 劫持回退（~363 行）
+├── download_manager.py        # 后台下载管理器：暂停/续传/断点恢复/文件验证（~653 行）
+├── build.py                   # PyInstaller 打包脚本（版本号自动从 constants 读取）（~275 行）
+├── push.sh                    # 构建并推送到 GitHub Release 的脚本
 ├── README.md                  # 用户手册
 ├── CLAUDE.md                  # AI 编码助手指令（非人类开发者文档）
-├── DEVELOPER.md               # 本文件
-└── config/
-    ├── ABOUT.md               # 关于对话框内容（Markdown）
-    ├── settings.json          # 运行时配置（JSON）
+├── config/
+    ├── settings.json          # 运行时配置（JSON，首次运行自动创建）
     ├── icon.ico               # 程序图标
-    ├── version_info.txt       # 打包时自动生成，已加入 .gitignore
     └── data/
-        ├── DefaultList.xlsx   # 默认人员名单模板
-        ├── PersonnelList.xlsx # 实际使用的人员名单（如有）
-        └── exports/           # 抽选结果导出目录
+        └── DefaultList.xlsx   # 默认人员名单模板
+└── docs/
+    ├── ABOUT.md               # 关于对话框内容（Markdown）
+    ├── DEVELOPER.md           # 本文件
+    ├── FLET_MIGRATION.md      # Flet 版本迁移记录
+    └── UPDATE.md              # 各版本更新说明汇总
 ```
 
 ---
@@ -739,7 +741,7 @@ MOPPING_COUNT = 3          # 拖地模式固定人数
 
 ### 9.5 升级 Flet 版本
 
-1. 阅读 [Flet 更新日志](https://flet.dev/docs/release-notes) 了解破坏性变更
+1. 阅读 [Flet API参考](https://flet.dev/docs/reference/) 了解破坏性变更
 2. 检查 `error_handler.py` 中的 monkey-patch 是否仍然兼容（`_Page__context_wrapper` 属性名可能变化）
 3. 全面测试所有 UI 交互（尤其嵌套滚动容器、动画、表格渲染）
 4. 更新 CLAUDE.md 和本文件中的版本要求
@@ -764,4 +766,4 @@ git branch -d feature/xxx
 
 ---
 
-> **最后更新**：2026-07-25
+> **最后更新**：2026-08-06

@@ -27,7 +27,7 @@ def _exit_handler():
         duration = f"{seconds}秒"
     try:
         log = get_logger("APP")
-        log.info(f"应用退出 (运行时长: {duration})")
+        log.info(f"应用退出 (运行时长: {duration})\n")
     except Exception:
         pass
 

@@ -30,7 +30,7 @@ from constants import (
     DOWNLOAD_STATUS_COMPLETED, DOWNLOAD_PROGRESS_KNOWN_SIZE, DOWNLOAD_PROGRESS_UNKNOWN_SIZE,
     DOWNLOAD_SPEED_MB, DOWNLOAD_SPEED_KB, DOWNLOAD_ETA,
 )
-from logger import get_logger
+from logger import get_logger, set_debug_log_enabled
 from dialogs import (
     on_menu_about, on_menu_help,
     show_options_dialog, show_clear_records_confirm, show_mopping_redo_confirm,
@@ -105,6 +105,10 @@ class RandomSelectorUI:
         self._seed_value: int = settings.get("seed_value", DEFAULT_SEED)
         self._auto_check_update: bool = settings.get("auto_check_update", True)
         self._download_path: str = settings.get("download_path", "")
+        self._debug_log_enabled: bool = settings.get("debug_log_enabled", False)
+
+        # 应用调试日志开关
+        set_debug_log_enabled(self._debug_log_enabled)
         self._effective_seed: int | None = None   # 本次抽选实际使用的种子
 
         # 后台下载
@@ -139,11 +143,18 @@ class RandomSelectorUI:
 
     # ==================== 状态栏 ====================
 
-    def _refresh_status(self):
+    def _refresh_status(self, reload=True):
+        """更新状态栏。reload=True 时重新加载数据文件，False 时使用缓存数据。"""
         if self.status_text is None:
             return
-        if self.personnel_manager.load_data():
-            df = self.personnel_manager.df
+        if reload:
+            if not self.personnel_manager.load_data():
+                self.status_text.value = f"未能加载数据文件：{self.personnel_manager.file_name}"
+                if self.status_text.page is not None:
+                    self.status_text.update()
+                return
+        df = self.personnel_manager.df
+        if df is not None and not df.empty:
             total = len(df)
             selected = (df['是否已选'] == '是').sum()
             unselected = total - selected
@@ -180,10 +191,7 @@ class RandomSelectorUI:
         page.update()
         threading.Event().wait(REFRESH_ANIMATION_DURATION)
 
-        # 3. 强制重新加载 Excel 数据
-        self.personnel_manager.load_data()
-
-        # 4. 清除动画，更新状态栏
+        # 3. 清除动画，更新状态栏（_refresh_status 内部会重新加载数据）
         self.result_area.controls.clear()
         self.result_area.update()
         self._refresh_status()
@@ -302,24 +310,29 @@ class RandomSelectorUI:
             seed_value=self._seed_value,
             auto_check_update=self._auto_check_update,
             download_path=self._download_path,
+            debug_log_enabled=self._debug_log_enabled,
             on_save=self._save_settings,
         )
 
     def _save_settings(self, enabled: bool, value: int, auto_check: bool,
-                       download_path: str):
+                       download_path: str, debug_log_enabled: bool):
         self._seed_enabled = enabled
         self._seed_value = value
         self._auto_check_update = auto_check
         self._download_path = download_path
+        self._debug_log_enabled = debug_log_enabled
+        set_debug_log_enabled(debug_log_enabled)
         save_settings({
             "seed_enabled": enabled,
             "seed_value": value,
             "auto_check_update": auto_check,
             "download_path": download_path,
+            "debug_log_enabled": debug_log_enabled,
         })
         seed_status = f"固定({value})" if enabled else "随机"
         self.log.info(
             f"配置变更: 种子={seed_status} | 自动更新={'开启' if auto_check else '关闭'}"
+            f" | 调试日志={'开启' if debug_log_enabled else '关闭'}"
             f"{' | 下载路径=' + download_path if download_path else ''}"
         )
 
@@ -994,7 +1007,8 @@ class RandomSelectorUI:
         self._do_mopping_selection()
 
     def _has_today_selection(self) -> bool:
-        if not self.personnel_manager.load_data():
+        # 调用方（start_selection）已加载数据，仅在 df 为 None 时兜底
+        if self.personnel_manager.df is None and not self.personnel_manager.load_data():
             return False
         df = self.personnel_manager.df
         today_str = datetime.now().strftime('%Y-%m-%d')
@@ -1048,7 +1062,7 @@ class RandomSelectorUI:
             )
 
         self.result_area.update()
-        self._refresh_status()
+        self._refresh_status(reload=False)  # _mopping_select_n 已更新内存数据
         if self.main_column is not None:
             self.main_column.scroll_to(key="backtrack_panel", duration=300)
 
@@ -1553,7 +1567,7 @@ class RandomSelectorUI:
             ),
         ])
         self.result_area.update()
-        self._refresh_status()
+        self._refresh_status(reload=False)  # save_data() 后 df 已是最新
 
     # ==================== 人员查看 ====================
 
